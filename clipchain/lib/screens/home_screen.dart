@@ -1,9 +1,68 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'video_feed_screen.dart';
+import 'test_video_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+
+  final List<Widget> _screens = [
+    const VideoFeedScreen(),
+    const Placeholder(), // Upload screen (to be implemented)
+    const ProfilePlaceholder(), // Profile screen (to be implemented)
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    print('Building NEW HomeScreen with navigation bar');  // Debug print
+    final authProvider = context.watch<AuthProvider>();
+
+    return Scaffold(
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Feed',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add_circle_outline),
+            label: 'Create',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const TestVideoScreen(),
+            ),
+          );
+        },
+        child: const Icon(Icons.science),
+        tooltip: 'Create Test Video',
+      ),
+    );
+  }
+}
+
+// Temporary placeholder for the profile screen
+class ProfilePlaceholder extends StatelessWidget {
+  const ProfilePlaceholder({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +71,7 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Home'),
+        title: const Text('Profile'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -35,7 +94,7 @@ class HomeScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              'Welcome!',
+              'Profile',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 8),

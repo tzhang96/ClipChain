@@ -44,9 +44,12 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
+        print('AuthWrapper: isAuthenticated = ${authProvider.isAuthenticated}');  // Debug print
         if (authProvider.isAuthenticated) {
-          return const HomeScreen();
+          print('AuthWrapper: Returning HomeScreen');  // Debug print
+          return HomeScreen();
         } else {
+          print('AuthWrapper: Returning LoginScreen');  // Debug print
           return const LoginScreen();
         }
       },
