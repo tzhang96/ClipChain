@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/video_model.dart';
 
 class VideoFeedScreen extends StatefulWidget {
@@ -25,12 +26,15 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
   Future<void> _loadVideos() async {
     try {
+      print('Starting to load videos...');  // Debug print
       final QuerySnapshot snapshot = await FirebaseFirestore.instance
           .collection('videos')
           .orderBy('createdAt', descending: true)
           .limit(10)
           .get();
 
+      print('Firestore query complete. Found ${snapshot.docs.length} videos');  // Debug print
+      
       setState(() {
         _videos = snapshot.docs
             .map((doc) => VideoModel.fromMap(
@@ -39,34 +43,62 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         _isLoading = false;
       });
 
+      print('Videos loaded: ${_videos.length}');  // Debug print
+
       if (_videos.isNotEmpty) {
+        print('Initializing first video...');  // Debug print
         _initializeVideo(0);
+      } else {
+        print('No videos found to initialize');  // Debug print
       }
     } catch (e) {
+      print('Error loading videos: $e');  // Debug print
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading videos: ${e.toString()}')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading videos: ${e.toString()}')),
+        );
+      }
     }
   }
 
   Future<void> _initializeVideo(int index) async {
     if (index >= 0 && index < _videos.length) {
-      final controller =
-          VideoPlayerController.networkUrl(Uri.parse(_videos[index].videoUrl));
+      try {
+        // Convert gs:// URL to HTTPS URL
+        String videoUrl = _videos[index].videoUrl;
+        if (videoUrl.startsWith('gs://')) {
+          // Remove 'gs://' and split into bucket and path
+          String path = videoUrl.substring(5);
+          String objectPath = path.substring(path.indexOf('/') + 1);
+          
+          // Get download URL
+          final ref = FirebaseStorage.instance.ref(objectPath);
+          videoUrl = await ref.getDownloadURL();
+          print('Converted video URL: $videoUrl'); // Debug print
+        }
 
-      await controller.initialize();
-      controller.setLooping(true);
-      
-      if (mounted) {
-        setState(() {
-          if (_currentController != null) {
-            _currentController!.pause();
-            _currentController!.dispose();
-          }
-          _currentController = controller;
-          _currentController!.play();
-        });
+        final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+        await controller.initialize();
+        controller.setLooping(true);
+        
+        if (mounted) {
+          setState(() {
+            if (_currentController != null) {
+              _currentController!.pause();
+              _currentController!.dispose();
+            }
+            _currentController = controller;
+            _currentController!.play();
+          });
+        }
+      } catch (e) {
+        print('Error initializing video: $e'); // Debug print
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error playing video: ${e.toString()}')),
+          );
+        }
       }
     }
   }
@@ -80,6 +112,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('VideoFeedScreen build called. Loading: $_isLoading, Videos: ${_videos.length}');  // Debug print
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
