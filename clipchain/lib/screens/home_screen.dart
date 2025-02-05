@@ -53,8 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
-        child: const Icon(Icons.science),
         tooltip: 'Create Test Video',
+        child: const Icon(Icons.science),
       ),
     );
   }

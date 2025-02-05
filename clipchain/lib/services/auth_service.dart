@@ -75,7 +75,7 @@ class AuthService {
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
       default:
-        return 'An error occurred. Please try again. (${code})';
+        return 'An error occurred. Please try again. ($code)';
     }
   }
 } 

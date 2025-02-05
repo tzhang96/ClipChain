@@ -17,6 +17,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   int _currentPageIndex = 0;
   VideoPlayerController? _currentController;
   bool _isLoading = true;
+  bool _isVideoInitializing = false;
 
   @override
   void initState() {
@@ -26,14 +27,14 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
   Future<void> _loadVideos() async {
     try {
-      print('Starting to load videos...');  // Debug print
+      print('Starting to load videos...');
       final QuerySnapshot snapshot = await FirebaseFirestore.instance
           .collection('videos')
           .orderBy('createdAt', descending: true)
           .limit(10)
           .get();
 
-      print('Firestore query complete. Found ${snapshot.docs.length} videos');  // Debug print
+      print('Firestore query complete. Found ${snapshot.docs.length} videos');
       
       setState(() {
         _videos = snapshot.docs
@@ -43,16 +44,16 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         _isLoading = false;
       });
 
-      print('Videos loaded: ${_videos.length}');  // Debug print
+      print('Videos loaded: ${_videos.length}');
 
       if (_videos.isNotEmpty) {
-        print('Initializing first video...');  // Debug print
+        print('Initializing first video...');
         _initializeVideo(0);
       } else {
-        print('No videos found to initialize');  // Debug print
+        print('No videos found to initialize');
       }
     } catch (e) {
-      print('Error loading videos: $e');  // Debug print
+      print('Error loading videos: $e');
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -62,43 +63,53 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
-  Future<void> _initializeVideo(int index) async {
-    if (index >= 0 && index < _videos.length) {
-      try {
-        // Convert gs:// URL to HTTPS URL
-        String videoUrl = _videos[index].videoUrl;
-        if (videoUrl.startsWith('gs://')) {
-          // Remove 'gs://' and split into bucket and path
-          String path = videoUrl.substring(5);
-          String objectPath = path.substring(path.indexOf('/') + 1);
-          
-          // Get download URL
-          final ref = FirebaseStorage.instance.ref(objectPath);
-          videoUrl = await ref.getDownloadURL();
-          print('Converted video URL: $videoUrl'); // Debug print
-        }
+  Future<void> _cleanupCurrentController() async {
+    if (_currentController != null) {
+      await _currentController!.pause();
+      await _currentController!.dispose();
+      _currentController = null;
+    }
+  }
 
-        final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-        await controller.initialize();
-        controller.setLooping(true);
+  Future<void> _initializeVideo(int index) async {
+    if (_isVideoInitializing || index < 0 || index >= _videos.length) return;
+
+    setState(() => _isVideoInitializing = true);
+
+    try {
+      await _cleanupCurrentController();
+
+      String videoUrl = _videos[index].videoUrl;
+      if (videoUrl.startsWith('gs://')) {
+        String path = videoUrl.substring(5);
+        String objectPath = path.substring(path.indexOf('/') + 1);
+        final ref = FirebaseStorage.instance.ref(objectPath);
+        videoUrl = await ref.getDownloadURL();
+        print('Converted video URL: $videoUrl');
+      }
+
+      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      await controller.initialize();
+      controller.setLooping(true);
+      
+      if (mounted) {
+        setState(() {
+          _currentController = controller;
+          _isVideoInitializing = false;
+        });
         
-        if (mounted) {
-          setState(() {
-            if (_currentController != null) {
-              _currentController!.pause();
-              _currentController!.dispose();
-            }
-            _currentController = controller;
-            _currentController!.play();
-          });
+        // Only play if this is still the current page
+        if (_currentPageIndex == index) {
+          _currentController?.play();
         }
-      } catch (e) {
-        print('Error initializing video: $e'); // Debug print
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error playing video: ${e.toString()}')),
-          );
-        }
+      }
+    } catch (e) {
+      print('Error initializing video: $e');
+      setState(() => _isVideoInitializing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error playing video: ${e.toString()}')),
+        );
       }
     }
   }
@@ -106,13 +117,18 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _currentController?.dispose();
+    _cleanupCurrentController();
     super.dispose();
+  }
+
+  void _onPageChanged(int index) async {
+    setState(() => _currentPageIndex = index);
+    await _initializeVideo(index);
   }
 
   @override
   Widget build(BuildContext context) {
-    print('VideoFeedScreen build called. Loading: $_isLoading, Videos: ${_videos.length}');  // Debug print
+    print('VideoFeedScreen build called. Loading: $_isLoading, Videos: ${_videos.length}');
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -124,54 +140,61 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     return PageView.builder(
       scrollDirection: Axis.vertical,
       controller: _pageController,
-      onPageChanged: (index) {
-        setState(() => _currentPageIndex = index);
-        _initializeVideo(index);
-      },
+      onPageChanged: _onPageChanged,
       itemCount: _videos.length,
       itemBuilder: (context, index) {
         final video = _videos[index];
         
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_currentController != null &&
-                _currentPageIndex == index &&
-                _currentController!.value.isInitialized)
-              VideoPlayer(_currentController!)
-            else
-              const Center(child: CircularProgressIndicator()),
-            
-            // Video Info Overlay
-            Positioned(
-              bottom: 80,
-              left: 16,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    video.description,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.favorite, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${video.likes}',
-                        style: const TextStyle(color: Colors.white),
+        return GestureDetector(
+          onTap: () {
+            // Toggle play/pause on tap
+            if (_currentController?.value.isPlaying ?? false) {
+              _currentController?.pause();
+            } else {
+              _currentController?.play();
+            }
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_currentController != null &&
+                  _currentPageIndex == index &&
+                  _currentController!.value.isInitialized)
+                VideoPlayer(_currentController!)
+              else
+                const Center(child: CircularProgressIndicator()),
+              
+              // Video Info Overlay
+              Positioned(
+                bottom: 80,
+                left: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      video.description,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.favorite, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${video.likes}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
