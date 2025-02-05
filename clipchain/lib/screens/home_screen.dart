@@ -3,17 +3,40 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'video_feed_screen.dart';
 import 'upload_video_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final String? initialVideoId;
+
+  const HomeScreen({
+    super.key,
+    this.initialVideoId,
+  });
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final GlobalKey<VideoFeedScreenState> _feedKey = GlobalKey();
+  final GlobalKey<ProfileScreenState> _profileKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // If we have an initial video ID, navigate to it after the first frame
+    if (widget.initialVideoId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showVideo(widget.initialVideoId!);
+      });
+    }
+  }
+
+  void showVideo(String videoId) {
+    setState(() => _selectedIndex = 0); // Switch to feed tab
+    _feedKey.currentState?.navigateToVideo(videoId);
+  }
 
   void _onNavBarTap(int index) async {
     if (index == 1) {
@@ -25,8 +48,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       // If we got back a video ID, navigate to it in the feed
-      if (videoId != null && _feedKey.currentState != null) {
-        _feedKey.currentState!.navigateToVideo(videoId);
+      if (videoId != null) {
+        showVideo(videoId);
+        // Refresh profile videos
+        _profileKey.currentState?.refreshVideos();
       }
     } else {
       setState(() => _selectedIndex = index);
@@ -35,15 +60,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
-
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
         children: [
           VideoFeedScreen(key: _feedKey),
           Container(), // Placeholder for Create tab (handled by navigation)
-          const ProfilePlaceholder(),
+          ProfileScreen(key: _profileKey), // Current user's profile
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -63,55 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Profile',
           ),
         ],
-      ),
-    );
-  }
-}
-
-// Temporary placeholder for the profile screen
-class ProfilePlaceholder extends StatelessWidget {
-  const ProfilePlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
-    final user = authProvider.user;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await authProvider.signOut();
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.toString())),
-                  );
-                }
-              }
-            },
-          ),
-        ],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Profile',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Logged in as: ${user?.email ?? "Unknown"}',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-          ],
-        ),
       ),
     );
   }

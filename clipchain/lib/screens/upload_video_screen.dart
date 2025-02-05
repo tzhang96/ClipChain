@@ -45,7 +45,7 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
 
     try {
       // Upload to Cloudinary
-      final videoUrl = await _cloudinaryService.uploadVideo(
+      final urls = await _cloudinaryService.uploadVideo(
         _videoFile!,
         onProgress: (progress) {
           setState(() {
@@ -60,7 +60,8 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
 
       final docRef = await FirebaseFirestore.instance.collection('videos').add({
         'userId': user.uid,
-        'videoUrl': videoUrl,
+        'videoUrl': urls.videoUrl,
+        'thumbnailUrl': urls.thumbnailUrl,
         'description': _descriptionController.text,
         'likes': 0,
         'createdAt': FieldValue.serverTimestamp(),

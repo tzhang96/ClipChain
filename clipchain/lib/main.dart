@@ -72,6 +72,10 @@ class _MyAppState extends State<MyApp> {
         home: const AuthWrapper(),
         routes: {
           '/signup': (context) => const SignupScreen(),
+          '/feed': (context) {
+            final videoId = ModalRoute.of(context)?.settings.arguments as String?;
+            return HomeScreen(initialVideoId: videoId);
+          },
         },
       ),
     );

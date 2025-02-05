@@ -8,9 +8,8 @@ class CloudinaryService {
   
   CloudinaryService() : _cloudinary = CloudinaryConfig.instance;
 
-  /// Uploads a video file to Cloudinary
-  /// Returns the optimized Cloudinary URL of the uploaded video
-  Future<String> uploadVideo(File videoFile, {
+  /// Uploads a video file to Cloudinary and returns both video and thumbnail URLs
+  Future<({String videoUrl, String thumbnailUrl})> uploadVideo(File videoFile, {
     void Function(double progress)? onProgress,
   }) async {
     try {
@@ -47,13 +46,43 @@ class CloudinaryService {
         throw Exception('No URL returned from Cloudinary');
       }
 
-      print('CloudinaryService: Upload successful. URL: ${response.secureUrl}');
-      // Store the original URL in Firestore
-      return response.secureUrl!;
+      final videoUrl = response.secureUrl!;
+      // Generate thumbnail URL by transforming the video URL
+      final thumbnailUrl = generateThumbnailUrl(videoUrl);
+
+      print('CloudinaryService: Upload successful. Video URL: $videoUrl');
+      print('CloudinaryService: Generated thumbnail URL: $thumbnailUrl');
+      
+      return (videoUrl: videoUrl, thumbnailUrl: thumbnailUrl);
     } catch (e, stackTrace) {
       print('CloudinaryService: Error uploading video: $e');
       print('CloudinaryService: Stack trace: $stackTrace');
       rethrow;
+    }
+  }
+
+  /// Generates a thumbnail URL from a video URL using Cloudinary transformations
+  String generateThumbnailUrl(String videoUrl) {
+    try {
+      // Extract the base URL and video path
+      final urlParts = videoUrl.split('/upload/');
+      if (urlParts.length != 2) return videoUrl;
+
+      // Apply transformations for thumbnail
+      final transformations = [
+        'w_480',           // Width: 480px
+        'h_854',           // Height: 854px (16:9 aspect ratio)
+        'c_fill',          // Fill mode
+        'q_auto:low',     // Low quality for thumbnails for performance
+        'f_jpg',           // Output format
+        'so_0',            // Take thumbnail from start of video
+        'e_preview:duration_2', // 2-second preview image
+      ].join(',');
+      
+      return '${urlParts[0]}/upload/$transformations/${urlParts[1]}';
+    } catch (e) {
+      print('CloudinaryService: Error generating thumbnail URL: $e');
+      return videoUrl;
     }
   }
 
@@ -84,7 +113,6 @@ class CloudinaryService {
       
       final optimizedUrl = '${urlParts[0]}/upload/$transformations/${urlParts[1]}';
       print('CloudinaryService: Generated optimized URL: $optimizedUrl');
-      print('CloudinaryService: Original URL: $videoUrl');
       return optimizedUrl;
     } catch (e) {
       print('CloudinaryService: Error generating optimized URL: $e');

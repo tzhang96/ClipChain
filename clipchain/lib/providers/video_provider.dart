@@ -55,17 +55,17 @@ class VideoProvider with ChangeNotifier {
       notifyListeners();
 
       // Upload to Cloudinary
-      final videoUrl = await _cloudinaryService.uploadVideo(File(filePath));
+      final urls = await _cloudinaryService.uploadVideo(File(filePath));
       
       // Create video document
       final videoDoc = VideoDocument(
         id: '', // Will be set by Firestore
         userId: userId,
-        videoUrl: videoUrl,
+        videoUrl: urls.videoUrl,
+        thumbnailUrl: urls.thumbnailUrl,
         description: description,
         likes: 0,
         createdAt: Timestamp.now(),
-        thumbnailUrl: null,
       );
 
       // Add to Firestore
