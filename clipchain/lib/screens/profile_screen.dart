@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../widgets/video_grid.dart';
 import '../types/firestore_types.dart';
 import 'home_screen.dart';
+import '../providers/video_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId; // If null, shows current user's profile
@@ -45,11 +46,6 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
 
   Future<void> _loadVideos() async {
     try {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-
       final userId = widget.userId ?? 
           Provider.of<AuthProvider>(context, listen: false).user?.uid;
       
@@ -57,32 +53,11 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
         throw Exception('No user ID available');
       }
 
-      final snapshot = await FirebaseFirestore.instance
-          .collection(FirestorePaths.videos)
-          .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .get();
+      final videoProvider = Provider.of<VideoProvider>(context, listen: false);
+      await videoProvider.fetchUserVideos(userId);
 
-      final videos = snapshot.docs
-          .map((doc) => VideoModel.fromDocument(
-            VideoDocument.fromMap({...doc.data(), 'id': doc.id})
-          ))
-          .toList();
-
-      if (mounted) {
-        setState(() {
-          _videos = videos;
-          _isLoading = false;
-        });
-      }
     } catch (e) {
       print('ProfileScreen: Error loading videos: $e');
-      if (mounted) {
-        setState(() {
-          _videos = [];
-          _isLoading = false;
-        });
-      }
     }
   }
 
@@ -97,7 +72,11 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final videoProvider = context.watch<VideoProvider>();
+    final userId = widget.userId ?? authProvider.user?.uid;
     final isCurrentUser = widget.userId == null || widget.userId == authProvider.user?.uid;
+
+    final userVideos = userId != null ? videoProvider.getVideosByUserId(userId) : [];
 
     return Scaffold(
       body: Column(
@@ -121,7 +100,7 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       Text(
-                        '${_videos.length} videos',
+                        '${userVideos.length} videos',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -151,9 +130,9 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
               controller: _tabController,
               children: [
                 VideoGrid(
-                  videos: _videos,
-                  isLoading: _isLoading,
-                  errorMessage: _error,
+                  videos: userVideos.map((doc) => VideoModel.fromDocument(doc)).toList(),
+                  isLoading: videoProvider.isLoadingUserVideos,
+                  errorMessage: videoProvider.userVideosError,
                   onVideoTap: _onVideoTap,
                 ),
                 if (isCurrentUser)

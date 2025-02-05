@@ -9,17 +9,37 @@ class VideoProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   List<VideoDocument> _videos = [];
-  bool _isLoading = false;
-  String? _error;
+  Map<String, List<VideoDocument>> _userVideos = {}; // Cache of user-specific videos
+  
+  bool _isLoadingFeed = false;
+  bool _isLoadingUserVideos = false;
+  String? _feedError;
+  String? _userVideosError;
 
   List<VideoDocument> get videos => _videos;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+  bool get isLoadingFeed => _isLoadingFeed;
+  bool get isLoadingUserVideos => _isLoadingUserVideos;
+  String? get feedError => _feedError;
+  String? get userVideosError => _userVideosError;
 
+  /// Get videos for a specific user
+  List<VideoDocument> getVideosByUserId(String userId) {
+    return _userVideos[userId] ?? [];
+  }
+
+  /// Get a single video by ID
+  VideoDocument? getVideoById(String videoId) {
+    return _videos.cast<VideoDocument?>().firstWhere(
+      (v) => v?.id == videoId,
+      orElse: () => null,
+    );
+  }
+
+  /// Fetch all videos (for feed)
   Future<void> fetchVideos() async {
     try {
-      _isLoading = true;
-      _error = null;
+      _isLoadingFeed = true;
+      _feedError = null;
       notifyListeners();
 
       final QuerySnapshot videoSnapshot = await _firestore
@@ -36,22 +56,56 @@ class VideoProvider with ChangeNotifier {
           .toList();
 
     } catch (e) {
-      _error = 'Failed to fetch videos: $e';
-      print(_error);
+      _feedError = 'Failed to fetch videos: $e';
+      print(_feedError);
     } finally {
-      _isLoading = false;
+      _isLoadingFeed = false;
       notifyListeners();
     }
   }
 
-  Future<void> uploadVideo({
+  /// Fetch videos for a specific user
+  Future<void> fetchUserVideos(String userId) async {
+    try {
+      _isLoadingUserVideos = true;
+      _userVideosError = null;
+      notifyListeners();
+
+      final QuerySnapshot videoSnapshot = await _firestore
+          .collection(FirestorePaths.videos)
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final userVideos = videoSnapshot.docs
+          .map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            data['id'] = doc.id;
+            return VideoDocument.fromMap(data);
+          })
+          .toList();
+
+      _userVideos[userId] = userVideos;
+
+    } catch (e) {
+      _userVideosError = 'Failed to fetch user videos: $e';
+      print(_userVideosError);
+    } finally {
+      _isLoadingUserVideos = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> uploadVideo({
     required String filePath,
     required String description,
     required String userId,
   }) async {
     try {
-      _isLoading = true;
-      _error = null;
+      _isLoadingFeed = true;
+      _isLoadingUserVideos = true;
+      _feedError = null;
+      _userVideosError = null;
       notifyListeners();
 
       // Upload to Cloudinary
@@ -69,16 +123,26 @@ class VideoProvider with ChangeNotifier {
       );
 
       // Add to Firestore
-      await _firestore.collection(FirestorePaths.videos).add(videoDoc.toMap());
+      final docRef = await _firestore
+          .collection(FirestorePaths.videos)
+          .add(videoDoc.toMap());
 
-      // Refresh videos list
-      await fetchVideos();
+      // Refresh both global and user-specific videos
+      await Future.wait([
+        fetchVideos(),
+        fetchUserVideos(userId),
+      ]);
+
+      return docRef.id;
 
     } catch (e) {
-      _error = 'Failed to upload video: $e';
-      print(_error);
+      _feedError = 'Failed to upload video: $e';
+      _userVideosError = _feedError;
+      print(_feedError);
+      return null;
     } finally {
-      _isLoading = false;
+      _isLoadingFeed = false;
+      _isLoadingUserVideos = false;
       notifyListeners();
     }
   }
