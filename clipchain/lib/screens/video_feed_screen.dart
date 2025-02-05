@@ -1,70 +1,94 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:provider/provider.dart';
 import '../models/video_model.dart';
+import '../services/cloudinary_service.dart';
+import '../providers/auth_provider.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   const VideoFeedScreen({super.key});
 
   @override
-  State<VideoFeedScreen> createState() => _VideoFeedScreenState();
+  State<VideoFeedScreen> createState() => VideoFeedScreenState();
 }
 
-class _VideoFeedScreenState extends State<VideoFeedScreen> {
+class VideoFeedScreenState extends State<VideoFeedScreen> {
   final PageController _pageController = PageController();
+  final CloudinaryService _cloudinaryService = CloudinaryService();
   List<VideoModel> _videos = [];
   int _currentPageIndex = 0;
   VideoPlayerController? _currentController;
   bool _isLoading = true;
   bool _isVideoInitializing = false;
+  String? _loadingError;
+  StreamSubscription<QuerySnapshot>? _videosSubscription;
+  String? _currentVideoId;
 
   @override
   void initState() {
     super.initState();
-    _loadVideos();
+    print('VideoFeedScreen: initState called');
+    _subscribeToVideos();
   }
 
-  Future<void> _loadVideos() async {
-    try {
-      print('Starting to load videos...');
-      final QuerySnapshot snapshot = await FirebaseFirestore.instance
-          .collection('videos')
-          .orderBy('createdAt', descending: true)
-          .limit(10)
-          .get();
+  void _subscribeToVideos() {
+    print('VideoFeedScreen: Starting video subscription...');
+    _videosSubscription = FirebaseFirestore.instance
+        .collection('videos')
+        .orderBy('createdAt', descending: true)
+        .limit(10)
+        .snapshots()
+        .listen(
+      (snapshot) async {
+        print('VideoFeedScreen: Received video update. Found ${snapshot.docs.length} videos');
+        
+        if (!mounted) {
+          print('VideoFeedScreen: Widget not mounted after update');
+          return;
+        }
 
-      print('Firestore query complete. Found ${snapshot.docs.length} videos');
-      
-      setState(() {
-        _videos = snapshot.docs
-            .map((doc) => VideoModel.fromMap(
-                {...doc.data() as Map<String, dynamic>, 'id': doc.id}))
+        final newVideos = snapshot.docs
+            .map((doc) {
+              try {
+                return VideoModel.fromMap(
+                    {...doc.data() as Map<String, dynamic>, 'id': doc.id});
+              } catch (e) {
+                print('VideoFeedScreen: Error parsing video document: $e');
+                return null;
+              }
+            })
+            .where((video) => video != null)
+            .cast<VideoModel>()
             .toList();
-        _isLoading = false;
-      });
 
-      print('Videos loaded: ${_videos.length}');
+        setState(() {
+          _videos = newVideos;
+          _isLoading = false;
+        });
 
-      if (_videos.isNotEmpty) {
-        print('Initializing first video...');
-        _initializeVideo(0);
-      } else {
-        print('No videos found to initialize');
-      }
-    } catch (e) {
-      print('Error loading videos: $e');
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading videos: ${e.toString()}')),
-        );
-      }
-    }
+        // Initialize first video if needed
+        if (_currentController == null && _videos.isNotEmpty) {
+          print('VideoFeedScreen: Initializing first video...');
+          await _initializeVideo(0);
+        }
+      },
+      onError: (error) {
+        print('VideoFeedScreen: Error in video subscription: $error');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _loadingError = 'Error loading videos: ${error.toString()}';
+          });
+        }
+      },
+    );
   }
 
   Future<void> _cleanupCurrentController() async {
     if (_currentController != null) {
+      print('VideoFeedScreen: Cleaning up current controller');
       await _currentController!.pause();
       await _currentController!.dispose();
       _currentController = null;
@@ -72,21 +96,20 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   Future<void> _initializeVideo(int index) async {
-    if (_isVideoInitializing || index < 0 || index >= _videos.length) return;
+    if (_isVideoInitializing || index < 0 || index >= _videos.length) {
+      print('VideoFeedScreen: Skipping video initialization - invalid state');
+      return;
+    }
 
+    print('VideoFeedScreen: Starting video initialization for index $index');
     setState(() => _isVideoInitializing = true);
 
     try {
       await _cleanupCurrentController();
 
-      String videoUrl = _videos[index].videoUrl;
-      if (videoUrl.startsWith('gs://')) {
-        String path = videoUrl.substring(5);
-        String objectPath = path.substring(path.indexOf('/') + 1);
-        final ref = FirebaseStorage.instance.ref(objectPath);
-        videoUrl = await ref.getDownloadURL();
-        print('Converted video URL: $videoUrl');
-      }
+      // Get optimized video URL
+      String videoUrl = _cloudinaryService.getOptimizedVideoUrl(_videos[index].videoUrl);
+      print('VideoFeedScreen: Optimized URL: $videoUrl');
 
       final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
       await controller.initialize();
@@ -96,41 +119,87 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         setState(() {
           _currentController = controller;
           _isVideoInitializing = false;
+          _currentVideoId = _videos[index].id;
+          _currentPageIndex = index;  // Update index here to ensure sync
         });
         
         // Only play if this is still the current page
         if (_currentPageIndex == index) {
+          print('VideoFeedScreen: Playing video at index $index');
           _currentController?.play();
         }
       }
     } catch (e) {
-      print('Error initializing video: $e');
-      setState(() => _isVideoInitializing = false);
+      print('VideoFeedScreen: Error initializing video: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error playing video: ${e.toString()}')),
-        );
+        setState(() {
+          _isVideoInitializing = false;
+          _loadingError = 'Error playing video: ${e.toString()}';
+        });
       }
     }
   }
 
   @override
   void dispose() {
+    print('VideoFeedScreen: dispose called');
+    _videosSubscription?.cancel();
     _pageController.dispose();
     _cleanupCurrentController();
     super.dispose();
   }
 
   void _onPageChanged(int index) async {
-    setState(() => _currentPageIndex = index);
+    print('VideoFeedScreen: Page changed to index $index');
+    // Don't update state here to prevent race conditions
     await _initializeVideo(index);
+  }
+
+  // Navigate to a specific video by ID
+  void navigateToVideo(String videoId) {
+    final index = _videos.indexWhere((v) => v.id == videoId);
+    if (index != -1) {
+      _pageController.jumpToPage(index);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    print('VideoFeedScreen build called. Loading: $_isLoading, Videos: ${_videos.length}');
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading videos...'),
+          ],
+        ),
+      );
+    }
+
+    if (_loadingError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(_loadingError!),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _isLoading = true;
+                  _loadingError = null;
+                });
+                _subscribeToVideos();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
     }
 
     if (_videos.isEmpty) {
@@ -147,7 +216,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         
         return GestureDetector(
           onTap: () {
-            // Toggle play/pause on tap
             if (_currentController?.value.isPlaying ?? false) {
               _currentController?.pause();
             } else {

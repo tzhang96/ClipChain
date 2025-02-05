@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'video_feed_screen.dart';
-import 'test_video_screen.dart';
+import 'upload_video_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,23 +13,42 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  final GlobalKey<VideoFeedScreenState> _feedKey = GlobalKey();
 
-  final List<Widget> _screens = [
-    const VideoFeedScreen(),
-    const Placeholder(), // Upload screen (to be implemented)
-    const ProfilePlaceholder(), // Profile screen (to be implemented)
-  ];
+  void _onNavBarTap(int index) async {
+    if (index == 1) {
+      // Open upload screen when "Create" is tapped
+      final videoId = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (context) => const UploadVideoScreen(),
+        ),
+      );
+
+      // If we got back a video ID, navigate to it in the feed
+      if (videoId != null && _feedKey.currentState != null) {
+        _feedKey.currentState!.navigateToVideo(videoId);
+      }
+    } else {
+      setState(() => _selectedIndex = index);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    print('Building NEW HomeScreen with navigation bar');  // Debug print
     final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          VideoFeedScreen(key: _feedKey),
+          Container(), // Placeholder for Create tab (handled by navigation)
+          const ProfilePlaceholder(),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: _onNavBarTap,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
@@ -44,17 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Profile',
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const TestVideoScreen(),
-            ),
-          );
-        },
-        tooltip: 'Create Test Video',
-        child: const Icon(Icons.science),
       ),
     );
   }

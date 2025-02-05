@@ -5,7 +5,7 @@ class VideoDocument {
   final String id;
   final String userId;
   final String videoUrl;
-  final String thumbnailUrl;
+  final String? thumbnailUrl;
   final String description;
   final int likes;
   final Timestamp createdAt;
@@ -14,7 +14,7 @@ class VideoDocument {
     required this.id,
     required this.userId,
     required this.videoUrl,
-    required this.thumbnailUrl,
+    this.thumbnailUrl,
     required this.description,
     required this.likes,
     required this.createdAt,
@@ -25,7 +25,7 @@ class VideoDocument {
       id: map['id'] as String,
       userId: map['userId'] as String,
       videoUrl: map['videoUrl'] as String,
-      thumbnailUrl: map['thumbnailUrl'] as String,
+      thumbnailUrl: map['thumbnailUrl'] as String?,
       description: map['description'] as String,
       likes: map['likes'] as int,
       createdAt: map['createdAt'] as Timestamp,

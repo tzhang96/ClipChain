@@ -2,21 +2,62 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
-import 'providers/auth_provider.dart';
+import 'providers/index.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
+import 'config/cloudinary_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  runApp(const MyApp());
+  
+  try {
+    print('Initializing app...');
+    
+    // Initialize Firebase first
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('Firebase initialized successfully');
+    
+    // Initialize Cloudinary
+    await CloudinaryConfig.initialize();
+    print('All services initialized successfully');
+    
+    runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => VideoProvider()),
+        ],
+        child: const MyApp(),
+      ),
+    );
+  } catch (e) {
+    print('Error during app initialization: $e');
+    // You may want to show an error screen here instead of crashing
+    rethrow;
+  }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Reinitialize Cloudinary on hot reload
+    CloudinaryConfig.reinitialize().then((_) {
+      print('Cloudinary reinitialized after hot reload');
+    }).catchError((error) {
+      print('Error reinitializing Cloudinary after hot reload: $error');
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,12 +85,9 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
-        print('AuthWrapper: isAuthenticated = ${authProvider.isAuthenticated}');  // Debug print
         if (authProvider.isAuthenticated) {
-          print('AuthWrapper: Returning HomeScreen');  // Debug print
-          return HomeScreen();
+          return const HomeScreen();
         } else {
-          print('AuthWrapper: Returning LoginScreen');  // Debug print
           return const LoginScreen();
         }
       },
