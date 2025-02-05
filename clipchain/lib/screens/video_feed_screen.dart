@@ -1,11 +1,29 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../models/video_model.dart';
 import '../services/cloudinary_service.dart';
 import '../providers/auth_provider.dart';
+
+/// Represents the current video state
+class CurrentVideoState {
+  final int index;
+  final String id;
+  final VideoPlayerController controller;
+
+  const CurrentVideoState({
+    required this.index,
+    required this.id,
+    required this.controller,
+  });
+
+  void dispose() {
+    controller.dispose();
+  }
+}
 
 class VideoFeedScreen extends StatefulWidget {
   const VideoFeedScreen({super.key});
@@ -15,16 +33,21 @@ class VideoFeedScreen extends StatefulWidget {
 }
 
 class VideoFeedScreenState extends State<VideoFeedScreen> {
+  static const _pageSize = 10;
+  static const _navigationTimeout = Duration(seconds: 5);
+
   final PageController _pageController = PageController();
   final CloudinaryService _cloudinaryService = CloudinaryService();
+  bool _isInitializing = false; // Simple lock for initialization
+
   List<VideoModel> _videos = [];
-  int _currentPageIndex = 0;
-  VideoPlayerController? _currentController;
+  CurrentVideoState? _currentVideo;
   bool _isLoading = true;
   bool _isVideoInitializing = false;
   String? _loadingError;
   StreamSubscription<QuerySnapshot>? _videosSubscription;
-  String? _currentVideoId;
+  bool _isNavigating = false;
+  Timer? _navigationTimer;
 
   @override
   void initState() {
@@ -38,7 +61,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
     _videosSubscription = FirebaseFirestore.instance
         .collection('videos')
         .orderBy('createdAt', descending: true)
-        .limit(10)
+        .limit(_pageSize)
         .snapshots()
         .listen(
       (snapshot) async {
@@ -69,7 +92,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
         });
 
         // Initialize first video if needed
-        if (_currentController == null && _videos.isNotEmpty) {
+        if (_currentVideo == null && _videos.isNotEmpty) {
           print('VideoFeedScreen: Initializing first video...');
           await _initializeVideo(0);
         }
@@ -79,36 +102,56 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
         if (mounted) {
           setState(() {
             _isLoading = false;
-            _loadingError = 'Error loading videos: ${error.toString()}';
+            _loadingError = _getErrorMessage(error);
           });
         }
       },
     );
   }
 
-  Future<void> _cleanupCurrentController() async {
-    if (_currentController != null) {
-      print('VideoFeedScreen: Cleaning up current controller');
-      await _currentController!.pause();
-      await _currentController!.dispose();
-      _currentController = null;
+  String _getErrorMessage(dynamic error) {
+    if (error is FirebaseException) {
+      return 'Firebase error: ${error.message}';
+    }
+    if (error is PlatformException) {
+      return 'Video playback error: ${error.message}';
+    }
+    return 'Error: ${error.toString()}';
+  }
+
+  Future<void> _cleanupCurrentVideo() async {
+    final current = _currentVideo;
+    if (current != null) {
+      print('VideoFeedScreen: Cleaning up video at index ${current.index}');
+      await current.controller.pause();
+      current.dispose();
+      if (mounted) {
+        setState(() => _currentVideo = null);
+      }
     }
   }
 
   Future<void> _initializeVideo(int index) async {
-    if (_isVideoInitializing || index < 0 || index >= _videos.length) {
-      print('VideoFeedScreen: Skipping video initialization - invalid state');
+    // Simple lock implementation
+    if (_isInitializing) {
+      print('VideoFeedScreen: Video initialization already in progress');
       return;
     }
-
-    print('VideoFeedScreen: Starting video initialization for index $index');
-    setState(() => _isVideoInitializing = true);
+    _isInitializing = true;
 
     try {
-      await _cleanupCurrentController();
+      if (_isVideoInitializing || index < 0 || index >= _videos.length) {
+        print('VideoFeedScreen: Skipping video initialization - invalid state');
+        return;
+      }
 
-      // Get optimized video URL
-      String videoUrl = _cloudinaryService.getOptimizedVideoUrl(_videos[index].videoUrl);
+      print('VideoFeedScreen: Starting video initialization for index $index');
+      setState(() => _isVideoInitializing = true);
+
+      await _cleanupCurrentVideo();
+
+      final video = _videos[index];
+      String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
       print('VideoFeedScreen: Optimized URL: $videoUrl');
 
       final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
@@ -117,16 +160,18 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
       
       if (mounted) {
         setState(() {
-          _currentController = controller;
+          _currentVideo = CurrentVideoState(
+            index: index,
+            id: video.id,
+            controller: controller,
+          );
           _isVideoInitializing = false;
-          _currentVideoId = _videos[index].id;
-          _currentPageIndex = index;  // Update index here to ensure sync
         });
         
         // Only play if this is still the current page
-        if (_currentPageIndex == index) {
+        if (_currentVideo?.index == index) {
           print('VideoFeedScreen: Playing video at index $index');
-          _currentController?.play();
+          controller.play();
         }
       }
     } catch (e) {
@@ -134,32 +179,61 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
       if (mounted) {
         setState(() {
           _isVideoInitializing = false;
-          _loadingError = 'Error playing video: ${e.toString()}';
+          _loadingError = _getErrorMessage(e);
         });
       }
+    } finally {
+      _isInitializing = false;
     }
   }
 
   @override
   void dispose() {
     print('VideoFeedScreen: dispose called');
+    _navigationTimer?.cancel();
     _videosSubscription?.cancel();
     _pageController.dispose();
-    _cleanupCurrentController();
+    _cleanupCurrentVideo();
     super.dispose();
   }
 
   void _onPageChanged(int index) async {
     print('VideoFeedScreen: Page changed to index $index');
-    // Don't update state here to prevent race conditions
-    await _initializeVideo(index);
+    if (!_isNavigating) {  // Only handle page changes from user scrolling
+      await _initializeVideo(index);
+    }
+  }
+
+  void _startNavigationTimeout() {
+    _navigationTimer?.cancel();
+    _navigationTimer = Timer(_navigationTimeout, () {
+      _isNavigating = false;
+    });
   }
 
   // Navigate to a specific video by ID
-  void navigateToVideo(String videoId) {
+  void navigateToVideo(String videoId) async {
+    print('VideoFeedScreen: Navigating to video $videoId');
     final index = _videos.indexWhere((v) => v.id == videoId);
     if (index != -1) {
-      _pageController.jumpToPage(index);
+      _isNavigating = true;
+      _startNavigationTimeout();
+      
+      try {
+        // Initialize video first
+        await _initializeVideo(index);
+        // Then update page position
+        if (_pageController.hasClients) {
+          await _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      } finally {
+        _isNavigating = false;
+        _navigationTimer?.cancel();
+      }
     }
   }
 
@@ -216,19 +290,19 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
         
         return GestureDetector(
           onTap: () {
-            if (_currentController?.value.isPlaying ?? false) {
-              _currentController?.pause();
+            if (_currentVideo?.controller.value.isPlaying ?? false) {
+              _currentVideo?.controller.pause();
             } else {
-              _currentController?.play();
+              _currentVideo?.controller.play();
             }
           },
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (_currentController != null &&
-                  _currentPageIndex == index &&
-                  _currentController!.value.isInitialized)
-                VideoPlayer(_currentController!)
+              if (_currentVideo?.controller != null &&
+                  _currentVideo?.index == index &&
+                  _currentVideo!.controller.value.isInitialized)
+                VideoPlayer(_currentVideo!.controller)
               else
                 const Center(child: CircularProgressIndicator()),
               
