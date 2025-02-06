@@ -35,6 +35,26 @@ class VideoProvider with ChangeNotifier {
     );
   }
 
+  /// Update a video in the cache
+  void updateVideoInCache(VideoDocument updatedVideo) {
+    // Update in main videos list
+    final index = _videos.indexWhere((v) => v.id == updatedVideo.id);
+    if (index != -1) {
+      _videos[index] = updatedVideo;
+    }
+
+    // Update in user videos cache
+    final userId = updatedVideo.userId;
+    if (_userVideos.containsKey(userId)) {
+      final userVideoIndex = _userVideos[userId]!.indexWhere((v) => v.id == updatedVideo.id);
+      if (userVideoIndex != -1) {
+        _userVideos[userId]![userVideoIndex] = updatedVideo;
+      }
+    }
+
+    notifyListeners();
+  }
+
   /// Fetch all videos (for feed)
   Future<void> fetchVideos() async {
     try {

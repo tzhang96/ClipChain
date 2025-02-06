@@ -4,10 +4,11 @@ import 'package:provider/provider.dart';
 import '../models/video_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
+import '../providers/video_provider.dart';
+import '../providers/likes_provider.dart';
 import '../widgets/video_grid.dart';
 import '../types/firestore_types.dart';
 import 'home_screen.dart';
-import '../providers/video_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId; // If null, shows current user's profile
@@ -66,10 +67,12 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
 
       final videoProvider = Provider.of<VideoProvider>(context, listen: false);
       final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final likesProvider = Provider.of<LikesProvider>(context, listen: false);
       
       await Future.wait([
         videoProvider.fetchUserVideos(userId),
         userProvider.fetchUser(userId),
+        likesProvider.loadUserLikes(userId),
       ]);
 
     } catch (e) {
@@ -159,7 +162,26 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
                   onVideoTap: _onVideoTap,
                 ),
                 if (isCurrentUser)
-                  const Center(child: Text('Liked videos coming soon')),
+                  Consumer2<LikesProvider, VideoProvider>(
+                    builder: (context, likesProvider, videoProvider, _) {
+                      final userId = authProvider.user?.uid;
+                      if (userId == null) return const Center(child: Text('Not logged in'));
+
+                      final likedVideoIds = likesProvider.getLikedVideoIds(userId);
+                      final likedVideos = likedVideoIds
+                          .map((id) => videoProvider.getVideoById(id))
+                          .where((video) => video != null)
+                          .map((video) => VideoModel.fromDocument(video!))
+                          .toList();
+
+                      return VideoGrid(
+                        videos: likedVideos,
+                        isLoading: likesProvider.isLoading,
+                        errorMessage: likesProvider.error,
+                        onVideoTap: _onVideoTap,
+                      );
+                    },
+                  ),
               ],
             ),
           ),

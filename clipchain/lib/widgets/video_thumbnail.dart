@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/video_model.dart';
+import '../providers/auth_provider.dart';
+import '../providers/likes_provider.dart';
 
 class VideoThumbnail extends StatelessWidget {
   final VideoModel video;
@@ -14,45 +17,48 @@ class VideoThumbnail extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video Thumbnail
+        // Thumbnail Image
         if (video.thumbnailUrl != null)
           Image.network(
             video.thumbnailUrl!,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return const ColoredBox(
-                color: Colors.black12,
-                child: Icon(Icons.error_outline),
-              );
-            },
           )
         else
-          const ColoredBox(
-            color: Colors.black12,
-            child: Icon(Icons.play_circle_outline),
+          Container(
+            color: Colors.black,
+            child: const Center(
+              child: Icon(Icons.video_library, color: Colors.white),
+            ),
           ),
 
-        // Video Info Overlay
+        // Like Count Overlay
         Positioned(
           bottom: 4,
           left: 4,
-          right: 4,
-          child: Row(
-            children: [
-              const Icon(
-                Icons.favorite,
-                color: Colors.white,
-                size: 16,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '${video.likes}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
-              ),
-            ],
+          child: Consumer2<AuthProvider, LikesProvider>(
+            builder: (context, authProvider, likesProvider, _) {
+              final userId = authProvider.user?.uid;
+              final isLiked = userId != null && 
+                  likesProvider.isVideoLiked(userId, video.id);
+
+              return Row(
+                children: [
+                  Icon(
+                    Icons.favorite,
+                    color: isLiked ? Colors.red : Colors.white,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${video.likes}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],

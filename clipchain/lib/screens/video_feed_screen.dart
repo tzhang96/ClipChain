@@ -5,6 +5,8 @@ import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
 import '../providers/video_provider.dart';
 import '../providers/user_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/likes_provider.dart';
 import '../models/video_model.dart';
 import '../services/cloudinary_service.dart';
 import '../types/firestore_types.dart';
@@ -54,6 +56,11 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
     // Schedule initialization after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeFirstVideo();
+      // Load likes for current user
+      final userId = context.read<AuthProvider>().user?.uid;
+      if (userId != null) {
+        context.read<LikesProvider>().loadUserLikes(userId);
+      }
     });
   }
 
@@ -331,15 +338,31 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.favorite, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${video.likes}',
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                          ],
+                        Consumer2<AuthProvider, LikesProvider>(
+                          builder: (context, authProvider, likesProvider, child) {
+                            final userId = authProvider.user?.uid;
+                            final isLiked = userId != null && 
+                                likesProvider.isVideoLiked(userId, video.id);
+
+                            return Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: userId == null ? null : () {
+                                    likesProvider.toggleLike(userId, video.id);
+                                  },
+                                  child: Icon(
+                                    isLiked ? Icons.favorite : Icons.favorite_border,
+                                    color: isLiked ? Colors.red : Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${video.likes}',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),

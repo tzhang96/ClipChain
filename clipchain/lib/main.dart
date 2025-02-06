@@ -30,6 +30,13 @@ void main() async {
           ChangeNotifierProvider(create: (_) => AuthProvider()),
           ChangeNotifierProvider(create: (_) => VideoProvider()),
           ChangeNotifierProvider(create: (_) => UserProvider()),
+          ChangeNotifierProvider(
+            create: (context) {
+              final likesProvider = LikesProvider();
+              likesProvider.initialize(context.read<VideoProvider>());
+              return likesProvider;
+            },
+          ),
         ],
         child: const MyApp(),
       ),
