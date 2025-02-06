@@ -1,0 +1,5 @@
+---
+description: command line tasks
+globs: 
+---
+- Always use Powershell syntax when giving command line prompts.

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import '../models/video_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/video_provider.dart';
 import '../providers/likes_provider.dart';
-import '../widgets/video_grid.dart';
+import '../widgets/video_grid_view.dart';
 import '../types/firestore_types.dart';
 import 'home_screen.dart';
 
@@ -22,28 +20,14 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => ProfileScreenState();
 }
 
-class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
+class ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final isCurrentUser = widget.userId == null || 
-        widget.userId == Provider.of<AuthProvider>(context, listen: false).user?.uid;
-    _tabController = TabController(
-      length: isCurrentUser ? 2 : 1,
-      vsync: this,
-    );
     // Schedule initialization after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   /// Public method to refresh data
@@ -93,100 +77,77 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
     final authProvider = context.watch<AuthProvider>();
     final videoProvider = context.watch<VideoProvider>();
     final userProvider = context.watch<UserProvider>();
+    final likesProvider = context.watch<LikesProvider>();
+    
     final userId = widget.userId ?? authProvider.user?.uid;
     final isCurrentUser = widget.userId == null || widget.userId == authProvider.user?.uid;
-
-    final userVideos = userId != null ? videoProvider.getVideosByUserId(userId) : [];
+    final userVideos = userId != null ? videoProvider.getVideosByUserId(userId) : <VideoDocument>[];
     final userData = userId != null ? userProvider.getUser(userId) : null;
 
-    return Scaffold(
-      body: Column(
-        children: [
-          // Profile Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundImage: userData?.photoUrl != null
-                      ? NetworkImage(userData!.photoUrl!)
-                      : null,
-                  child: userData?.photoUrl == null
-                      ? const Icon(Icons.person, size: 40)
-                      : null,
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        userData?.username ?? 'Loading...',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      Text(
-                        '${userVideos.length} videos',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-                if (isCurrentUser)
-                  IconButton(
-                    icon: const Icon(Icons.logout),
-                    onPressed: () => authProvider.signOut(),
-                  ),
-              ],
-            ),
-          ),
-
-          // Tab Bar
-          TabBar(
-            controller: _tabController,
-            tabs: [
-              const Tab(text: 'Videos'),
-              if (isCurrentUser) const Tab(text: 'Liked'),
-            ],
-          ),
-
-          // Tab Content
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                VideoGrid(
-                  videos: userVideos.map((doc) => VideoModel.fromDocument(doc)).toList(),
-                  isLoading: videoProvider.isLoadingUserVideos,
-                  errorMessage: videoProvider.userVideosError,
-                  onVideoTap: _onVideoTap,
-                ),
-                if (isCurrentUser)
-                  Consumer2<LikesProvider, VideoProvider>(
-                    builder: (context, likesProvider, videoProvider, _) {
-                      final userId = authProvider.user?.uid;
-                      if (userId == null) return const Center(child: Text('Not logged in'));
-
-                      final likedVideoIds = likesProvider.getLikedVideoIds(userId);
-                      final likedVideos = likedVideoIds
-                          .map((id) => videoProvider.getVideoById(id))
-                          .where((video) => video != null)
-                          .map((video) => VideoModel.fromDocument(video!))
-                          .toList();
-
-                      return VideoGrid(
-                        videos: likedVideos,
-                        isLoading: likesProvider.isLoading,
-                        errorMessage: likesProvider.error,
-                        onVideoTap: _onVideoTap,
-                      );
-                    },
-                  ),
-              ],
-            ),
-          ),
-        ],
+    // Build tabs data
+    final tabs = [
+      TabData(
+        label: 'Videos',
+        videos: userVideos,
+        isLoading: videoProvider.isLoadingUserVideos,
+        errorMessage: videoProvider.userVideosError,
       ),
+      if (isCurrentUser)
+        TabData(
+          label: 'Liked',
+          videos: userId != null
+            ? likesProvider.getLikedVideoIds(userId)
+                .map((id) => videoProvider.getVideoById(id))
+                .where((video) => video != null)
+                .map((video) => video!)
+                .toList()
+            : <VideoDocument>[],
+          isLoading: likesProvider.isLoading,
+          errorMessage: likesProvider.error,
+        ),
+    ];
+
+    return VideoGridView(
+      showBackButton: widget.userId != null, // Show back button if viewing another user's profile
+      header: Container(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundImage: userData?.photoUrl != null
+                  ? NetworkImage(userData!.photoUrl!)
+                  : null,
+              child: userData?.photoUrl == null
+                  ? const Icon(Icons.person, size: 40)
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    userData?.username ?? 'Loading...',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  Text(
+                    '${userVideos.length} videos',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+            if (isCurrentUser)
+              IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () => authProvider.signOut(),
+              ),
+          ],
+        ),
+      ),
+      tabs: tabs,
+      onVideoTap: _onVideoTap,
     );
   }
 } 

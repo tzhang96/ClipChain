@@ -11,6 +11,7 @@ import '../models/video_model.dart';
 import '../services/cloudinary_service.dart';
 import '../types/firestore_types.dart';
 import 'profile_screen.dart';
+import '../widgets/video_grid_view.dart';
 
 /// Represents the current video state
 class CurrentVideoState {
@@ -30,7 +31,16 @@ class CurrentVideoState {
 }
 
 class VideoFeedScreen extends StatefulWidget {
-  const VideoFeedScreen({super.key});
+  final List<VideoDocument>? customVideos;
+  final int initialIndex;
+  final String? title;
+
+  const VideoFeedScreen({
+    super.key,
+    this.customVideos,
+    this.initialIndex = 0,
+    this.title,
+  });
 
   @override
   State<VideoFeedScreen> createState() => VideoFeedScreenState();
@@ -48,6 +58,8 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
   String? _loadingError;
   bool _isNavigating = false;
   Timer? _navigationTimer;
+
+  List<VideoDocument> get _videos => widget.customVideos ?? context.read<VideoProvider>().videos;
 
   @override
   void initState() {
@@ -67,12 +79,20 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
   Future<void> _initializeFirstVideo() async {
     if (!mounted) return;
     
-    final videoProvider = context.read<VideoProvider>();
-    if (videoProvider.videos.isEmpty) {
-      await videoProvider.fetchVideos();
+    if (widget.customVideos == null) {
+      final videoProvider = context.read<VideoProvider>();
+      if (videoProvider.videos.isEmpty) {
+        await videoProvider.fetchVideos();
+      }
     }
-    if (mounted && videoProvider.videos.isNotEmpty) {
-      await _initializeVideo(0);
+
+    if (mounted && _videos.isNotEmpty) {
+      // Initialize at the specified initial index
+      final initialIndex = widget.initialIndex.clamp(0, _videos.length - 1);
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(initialIndex);
+      }
+      await _initializeVideo(initialIndex);
     }
   }
 
@@ -110,8 +130,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
         return;
       }
 
-      final videoProvider = context.read<VideoProvider>();
-      if (index < 0 || index >= videoProvider.videos.length) {
+      if (index < 0 || index >= _videos.length) {
         print('VideoFeedScreen: Invalid video index: $index');
         return;
       }
@@ -121,7 +140,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
 
       await _cleanupCurrentVideo();
 
-      final video = videoProvider.videos[index];
+      final video = _videos[index];
       String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
       print('VideoFeedScreen: Optimized URL: $videoUrl');
 
@@ -207,6 +226,30 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
+  void _onHeaderTap() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => VideoGridView(
+          title: widget.title ?? 'Videos',
+          showBackButton: true,
+          header: Container(),
+          tabs: [
+            TabData(
+              label: 'All',
+              videos: _videos,
+              isLoading: widget.customVideos == null && context.read<VideoProvider>().isLoadingFeed,
+              errorMessage: widget.customVideos == null ? context.read<VideoProvider>().feedError : null,
+            ),
+          ],
+          onVideoTap: (videoId) {
+            Navigator.pop(context);
+            navigateToVideo(videoId);
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<VideoProvider>(
@@ -246,131 +289,170 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
           return const Center(child: Text('No videos available'));
         }
 
-        return PageView.builder(
-          scrollDirection: Axis.vertical,
-          controller: _pageController,
-          onPageChanged: _onPageChanged,
-          itemCount: videoProvider.videos.length,
-          itemBuilder: (context, index) {
-            final video = videoProvider.videos[index];
-            
-            return GestureDetector(
-              onTap: () {
-                if (_currentVideo?.controller.value.isPlaying ?? false) {
-                  _currentVideo?.controller.pause();
-                } else {
-                  _currentVideo?.controller.play();
-                }
-              },
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (_currentVideo?.controller != null &&
-                      _currentVideo?.index == index &&
-                      _currentVideo!.controller.value.isInitialized)
-                    VideoPlayer(_currentVideo!.controller)
-                  else
-                    const Center(child: CircularProgressIndicator()),
-                  
-                  // Video Info Overlay
-                  Positioned(
-                    bottom: 80,
-                    left: 16,
-                    right: 16,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // User Info Row
-                        Consumer<UserProvider>(
-                          builder: (context, userProvider, child) {
-                            final user = userProvider.getUser(video.userId);
-                            
-                            // Fetch user data if not available
-                            if (user == null && !userProvider.isLoading(video.userId)) {
-                              // Schedule the fetch after the current build
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) {
-                                  userProvider.fetchUser(video.userId);
+        return Stack(
+          children: [
+            PageView.builder(
+              scrollDirection: Axis.vertical,
+              controller: _pageController,
+              onPageChanged: _onPageChanged,
+              itemCount: _videos.length,
+              itemBuilder: (context, index) {
+                final video = _videos[index];
+                
+                return GestureDetector(
+                  onTap: () {
+                    if (_currentVideo?.controller.value.isPlaying ?? false) {
+                      _currentVideo?.controller.pause();
+                    } else {
+                      _currentVideo?.controller.play();
+                    }
+                  },
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_currentVideo?.controller != null &&
+                          _currentVideo?.index == index &&
+                          _currentVideo!.controller.value.isInitialized)
+                        VideoPlayer(_currentVideo!.controller)
+                      else
+                        const Center(child: CircularProgressIndicator()),
+                      
+                      // Video Info Overlay
+                      Positioned(
+                        bottom: 80,
+                        left: 16,
+                        right: 16,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // User Info Row
+                            Consumer<UserProvider>(
+                              builder: (context, userProvider, child) {
+                                final user = userProvider.getUser(video.userId);
+                                
+                                // Fetch user data if not available
+                                if (user == null && !userProvider.isLoading(video.userId)) {
+                                  // Schedule the fetch after the current build
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      userProvider.fetchUser(video.userId);
+                                    }
+                                  });
                                 }
-                              });
-                            }
 
-                            return GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ProfileScreen(userId: video.userId),
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ProfileScreen(userId: video.userId),
+                                      ),
+                                    );
+                                  },
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 20,
+                                        backgroundImage: user?.photoUrl != null
+                                            ? NetworkImage(user!.photoUrl!)
+                                            : null,
+                                        child: user?.photoUrl == null
+                                            ? const Icon(Icons.person)
+                                            : null,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        user?.username ?? 'Loading...',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 );
                               },
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 20,
-                                    backgroundImage: user?.photoUrl != null
-                                        ? NetworkImage(user!.photoUrl!)
-                                        : null,
-                                    child: user?.photoUrl == null
-                                        ? const Icon(Icons.person)
-                                        : null,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    user?.username ?? 'Loading...',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              video.description,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
                               ),
-                            );
-                          },
+                            ),
+                            const SizedBox(height: 8),
+                            Consumer2<AuthProvider, LikesProvider>(
+                              builder: (context, authProvider, likesProvider, child) {
+                                final userId = authProvider.user?.uid;
+                                final isLiked = userId != null && 
+                                    likesProvider.isVideoLiked(userId, video.id);
+
+                                return Row(
+                                  children: [
+                                    GestureDetector(
+                                      onTap: userId == null ? null : () {
+                                        likesProvider.toggleLike(userId, video.id);
+                                      },
+                                      child: Icon(
+                                        isLiked ? Icons.favorite : Icons.favorite_border,
+                                        color: isLiked ? Colors.red : Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${video.likes}',
+                                      style: const TextStyle(color: Colors.white),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          video.description,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            if (widget.title != null)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 16,
+                right: 16,
+                child: GestureDetector(
+                  onTap: _onHeaderTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.title!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Consumer2<AuthProvider, LikesProvider>(
-                          builder: (context, authProvider, likesProvider, child) {
-                            final userId = authProvider.user?.uid;
-                            final isLiked = userId != null && 
-                                likesProvider.isVideoLiked(userId, video.id);
-
-                            return Row(
-                              children: [
-                                GestureDetector(
-                                  onTap: userId == null ? null : () {
-                                    likesProvider.toggleLike(userId, video.id);
-                                  },
-                                  child: Icon(
-                                    isLiked ? Icons.favorite : Icons.favorite_border,
-                                    color: isLiked ? Colors.red : Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${video.likes}',
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                              ],
-                            );
-                          },
+                        const Icon(
+                          Icons.grid_view,
+                          color: Colors.white,
+                          size: 20,
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
-            );
-          },
+          ],
         );
       },
     );

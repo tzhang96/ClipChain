@@ -64,7 +64,10 @@ class HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          VideoFeedScreen(key: _feedKey),
+          VideoFeedScreen(
+            key: _feedKey,
+            title: 'For You',
+          ),
           Container(), // Placeholder for Create tab (handled by navigation)
           ProfileScreen(key: _profileKey), // Current user's profile
         ],
