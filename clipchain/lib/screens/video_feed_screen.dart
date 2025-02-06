@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
 import '../providers/video_provider.dart';
+import '../providers/user_provider.dart';
 import '../models/video_model.dart';
 import '../services/cloudinary_service.dart';
 import '../types/firestore_types.dart';
+import 'profile_screen.dart';
 
 /// Represents the current video state
 class CurrentVideoState {
@@ -49,12 +51,17 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
   void initState() {
     super.initState();
     print('VideoFeedScreen: initState called');
-    _initializeFirstVideo();
+    // Schedule initialization after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeFirstVideo();
+    });
   }
 
   Future<void> _initializeFirstVideo() async {
+    if (!mounted) return;
+    
     final videoProvider = context.read<VideoProvider>();
-    if (!videoProvider.videos.isNotEmpty) {
+    if (videoProvider.videos.isEmpty) {
       await videoProvider.fetchVideos();
     }
     if (mounted && videoProvider.videos.isNotEmpty) {
@@ -262,15 +269,65 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                   Positioned(
                     bottom: 80,
                     left: 16,
+                    right: 16,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // User Info Row
+                        Consumer<UserProvider>(
+                          builder: (context, userProvider, child) {
+                            final user = userProvider.getUser(video.userId);
+                            
+                            // Fetch user data if not available
+                            if (user == null && !userProvider.isLoading(video.userId)) {
+                              // Schedule the fetch after the current build
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) {
+                                  userProvider.fetchUser(video.userId);
+                                }
+                              });
+                            }
+
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ProfileScreen(userId: video.userId),
+                                  ),
+                                );
+                              },
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 20,
+                                    backgroundImage: user?.photoUrl != null
+                                        ? NetworkImage(user!.photoUrl!)
+                                        : null,
+                                    child: user?.photoUrl == null
+                                        ? const Icon(Icons.person)
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    user?.username ?? 'Loading...',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
                         Text(
                           video.description,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
-                            fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 8),

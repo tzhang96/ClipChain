@@ -61,29 +61,19 @@ class CloudinaryService {
     }
   }
 
-  /// Generates a thumbnail URL from a video URL using Cloudinary transformations
+  /// Generate a thumbnail URL for a video
   String generateThumbnailUrl(String videoUrl) {
-    try {
-      // Extract the base URL and video path
-      final urlParts = videoUrl.split('/upload/');
-      if (urlParts.length != 2) return videoUrl;
+    // Extract public ID from the video URL
+    final regex = RegExp(r'v\d+/(.+?)\.');
+    final match = regex.firstMatch(videoUrl);
+    if (match == null) throw Exception('Invalid video URL format');
+    final publicId = match.group(1);
+    if (publicId == null) throw Exception('Could not extract public ID from URL');
 
-      // Apply transformations for thumbnail
-      final transformations = [
-        'w_480',           // Width: 480px
-        'h_854',           // Height: 854px (16:9 aspect ratio)
-        'c_fill',          // Fill mode
-        'q_auto:low',     // Low quality for thumbnails for performance
-        'f_jpg',           // Output format
-        'so_0',            // Take thumbnail from start of video
-        'e_preview:duration_2', // 2-second preview image
-      ].join(',');
-      
-      return '${urlParts[0]}/upload/$transformations/${urlParts[1]}';
-    } catch (e) {
-      print('CloudinaryService: Error generating thumbnail URL: $e');
-      return videoUrl;
-    }
+    // Generate thumbnail URL with minimal transformations for performance
+    return videoUrl
+        .replaceAll('/video/upload/', '/video/upload/w_360,h_640,c_limit,q_auto:low/')
+        .replaceAll('.mp4', '.jpg');
   }
 
   /// Generates an optimized video URL with Cloudinary transformations

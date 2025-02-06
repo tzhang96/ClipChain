@@ -29,6 +29,7 @@ void main() async {
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
           ChangeNotifierProvider(create: (_) => VideoProvider()),
+          ChangeNotifierProvider(create: (_) => UserProvider()),
         ],
         child: const MyApp(),
       ),

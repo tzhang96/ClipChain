@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../models/video_model.dart';
 import '../providers/auth_provider.dart';
+import '../providers/user_provider.dart';
 import '../widgets/video_grid.dart';
 import '../types/firestore_types.dart';
 import 'home_screen.dart';
@@ -22,15 +23,20 @@ class ProfileScreen extends StatefulWidget {
 
 class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<VideoModel> _videos = [];
-  bool _isLoading = true;
-  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _loadVideos();
+    final isCurrentUser = widget.userId == null || 
+        widget.userId == Provider.of<AuthProvider>(context, listen: false).user?.uid;
+    _tabController = TabController(
+      length: isCurrentUser ? 2 : 1,
+      vsync: this,
+    );
+    // Schedule initialization after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
   @override
@@ -39,12 +45,17 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
     super.dispose();
   }
 
-  /// Public method to refresh videos
+  /// Public method to refresh data
   void refreshVideos() {
-    _loadVideos();
+    // Schedule loading after the current frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
-  Future<void> _loadVideos() async {
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    
     try {
       final userId = widget.userId ?? 
           Provider.of<AuthProvider>(context, listen: false).user?.uid;
@@ -54,10 +65,15 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
       }
 
       final videoProvider = Provider.of<VideoProvider>(context, listen: false);
-      await videoProvider.fetchUserVideos(userId);
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      
+      await Future.wait([
+        videoProvider.fetchUserVideos(userId),
+        userProvider.fetchUser(userId),
+      ]);
 
     } catch (e) {
-      print('ProfileScreen: Error loading videos: $e');
+      print('ProfileScreen: Error loading data: $e');
     }
   }
 
@@ -73,10 +89,12 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final videoProvider = context.watch<VideoProvider>();
+    final userProvider = context.watch<UserProvider>();
     final userId = widget.userId ?? authProvider.user?.uid;
     final isCurrentUser = widget.userId == null || widget.userId == authProvider.user?.uid;
 
     final userVideos = userId != null ? videoProvider.getVideosByUserId(userId) : [];
+    final userData = userId != null ? userProvider.getUser(userId) : null;
 
     return Scaffold(
       body: Column(
@@ -86,9 +104,14 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 40,
-                  child: Icon(Icons.person, size: 40),
+                  backgroundImage: userData?.photoUrl != null
+                      ? NetworkImage(userData!.photoUrl!)
+                      : null,
+                  child: userData?.photoUrl == null
+                      ? const Icon(Icons.person, size: 40)
+                      : null,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -96,7 +119,7 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        authProvider.user?.email ?? 'User',
+                        userData?.username ?? 'Loading...',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       Text(

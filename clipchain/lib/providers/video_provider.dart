@@ -60,7 +60,8 @@ class VideoProvider with ChangeNotifier {
       print(_feedError);
     } finally {
       _isLoadingFeed = false;
-      notifyListeners();
+      // Schedule the notification for the next frame
+      Future.microtask(() => notifyListeners());
     }
   }
 
@@ -92,7 +93,8 @@ class VideoProvider with ChangeNotifier {
       print(_userVideosError);
     } finally {
       _isLoadingUserVideos = false;
-      notifyListeners();
+      // Schedule the notification for the next frame
+      Future.microtask(() => notifyListeners());
     }
   }
 
