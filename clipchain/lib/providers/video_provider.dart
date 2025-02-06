@@ -37,11 +37,17 @@ class VideoProvider with ChangeNotifier {
 
   /// Fetch all videos (for feed)
   Future<void> fetchVideos() async {
-    try {
-      _isLoadingFeed = true;
-      _feedError = null;
-      notifyListeners();
+    if (_isLoadingFeed) {
+      print('VideoProvider: Already fetching videos');
+      return;
+    }
 
+    _isLoadingFeed = true;
+    _feedError = null;
+    notifyListeners();
+
+    try {
+      print('VideoProvider: Starting to fetch videos');
       final QuerySnapshot videoSnapshot = await _firestore
           .collection(FirestorePaths.videos)
           .orderBy('createdAt', descending: true)
@@ -50,14 +56,15 @@ class VideoProvider with ChangeNotifier {
       _videos = videoSnapshot.docs
           .map((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            data['id'] = doc.id; // Ensure the document ID is included
+            data['id'] = doc.id;
             return VideoDocument.fromMap(data);
           })
           .toList();
 
+      print('VideoProvider: Successfully fetched ${_videos.length} videos');
     } catch (e) {
+      print('VideoProvider: Error fetching videos: $e');
       _feedError = 'Failed to fetch videos: $e';
-      print(_feedError);
     } finally {
       _isLoadingFeed = false;
       notifyListeners();
@@ -66,11 +73,16 @@ class VideoProvider with ChangeNotifier {
 
   /// Fetch videos for a specific user
   Future<void> fetchUserVideos(String userId) async {
-    try {
-      _isLoadingUserVideos = true;
-      _userVideosError = null;
-      notifyListeners();
+    if (_isLoadingUserVideos) {
+      print('VideoProvider: Already fetching user videos');
+      return;
+    }
 
+    _isLoadingUserVideos = true;
+    _userVideosError = null;
+    notifyListeners();
+
+    try {
       final QuerySnapshot videoSnapshot = await _firestore
           .collection(FirestorePaths.videos)
           .where('userId', isEqualTo: userId)
@@ -86,6 +98,7 @@ class VideoProvider with ChangeNotifier {
           .toList();
 
       _userVideos[userId] = userVideos;
+      print('VideoProvider: Successfully fetched ${userVideos.length} videos for user $userId');
 
     } catch (e) {
       _userVideosError = 'Failed to fetch user videos: $e';

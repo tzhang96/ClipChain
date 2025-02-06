@@ -30,7 +30,12 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadVideos();
+    // Use post-frame callback to avoid state changes during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadVideos();
+      }
+    });
   }
 
   @override
@@ -53,11 +58,27 @@ class ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderS
         throw Exception('No user ID available');
       }
 
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
       final videoProvider = Provider.of<VideoProvider>(context, listen: false);
       await videoProvider.fetchUserVideos(userId);
 
     } catch (e) {
       print('ProfileScreen: Error loading videos: $e');
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
