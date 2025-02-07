@@ -7,6 +7,7 @@ import 'providers/chain_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
+import 'screens/profile_screen.dart';
 import 'config/cloudinary_config.dart';
 import 'app_data_initializer.dart';
 
@@ -57,7 +58,12 @@ class App extends StatelessWidget {
           child: AuthWrapper(),
         ),
         routes: {
+          '/': (context) => const AuthWrapper(),
           '/signup': (context) => const SignupScreen(),
+          '/profile': (context) {
+            final userId = ModalRoute.of(context)?.settings.arguments as String?;
+            return ProfileScreen(userId: userId);
+          },
           '/feed': (context) {
             final videoId = ModalRoute.of(context)?.settings.arguments as String?;
             return HomeScreen(initialVideoId: videoId);

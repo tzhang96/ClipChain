@@ -65,14 +65,12 @@ class ChainDocument {
     - [x] Selected videos preview
   - [x] Save/cancel actions
   - [x] Loading and error states
-- [ ] Add "Add to Chain" button in video feed 👈 Next Priority
-  - [ ] Chain selection dialog
-    - [ ] List of existing chains
-    - [ ] "Create New Chain" option
-    - [ ] Loading and error states
-  - [ ] New chain creation shortcut
-  - [ ] Success/error feedback
-- [ ] Create ChainFeedSource for navigation
+- [x] Add "Add to Chain" button in video feed
+  - [x] Chain selection dialog
+    - [x] List of existing chains
+    - [x] Loading and error states
+  - [x] Success/error feedback
+- [ ] Create ChainFeedSource for navigation 👈 Next Priority
   - [ ] Create ChainFeedScreen for viewing chain contents
   - [ ] Implement buildReturnScreen
   - [ ] Handle chain-specific navigation

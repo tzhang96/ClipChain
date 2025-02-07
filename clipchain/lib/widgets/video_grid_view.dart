@@ -7,6 +7,7 @@ import 'chain_grid.dart';
 import '../screens/video_feed_screen.dart';
 import 'authenticated_view.dart';
 import '../screens/profile_screen.dart';
+import '../screens/chain_feed_screen.dart';
 
 class TabData {
   final String label;
@@ -116,9 +117,20 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
     }
   }
 
-  void _handleChainTap(String chainId) {
-    // TODO: Implement chain tap handler
-    print('Chain tapped: $chainId');
+  void _handleChainTap(String chainId, TabData tab) {
+    // Find the chain in the tab's chains list
+    final chain = tab.chains?.firstWhere((c) => c.id == chainId);
+    if (chain != null) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (context) => ChainFeedScreen(
+            chain: chain,
+            initialVideoIndex: 0,
+          ),
+        ),
+        (route) => false,
+      );
+    }
   }
 
   @override
@@ -132,6 +144,16 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
               backgroundColor: Colors.transparent,
               elevation: 0,
               automaticallyImplyLeading: widget.showBackButton,
+              leading: widget.showBackButton ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    '/profile',
+                    (route) => false,
+                    arguments: widget.userId,
+                  );
+                },
+              ) : null,
             )
           : null,
         body: Column(
@@ -168,7 +190,7 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
         chains: tab.chains!,
         isLoading: tab.isLoading,
         errorMessage: tab.errorMessage,
-        onChainTap: _handleChainTap,
+        onChainTap: (chainId) => _handleChainTap(chainId, tab),
       );
     }
 

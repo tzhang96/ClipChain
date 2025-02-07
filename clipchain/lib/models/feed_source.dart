@@ -27,6 +27,25 @@ class ProfileFeedSource extends FeedSource {
   Widget buildReturnScreen() => ProfileScreen(userId: userId);
 }
 
+/// A feed of videos from a chain
+class ChainFeedSource extends FeedSource {
+  final ChainDocument chain;
+  final String username;  // Chain creator's username
+
+  ChainFeedSource({
+    required this.chain,
+    required this.username,
+  });
+
+  @override
+  String get title => chain.title;
+
+  @override
+  Widget buildReturnScreen() {
+    return ProfileScreen(userId: chain.userId);
+  }
+}
+
 /// A feed of videos from search results
 class SearchFeedSource extends FeedSource {
   final String searchQuery;
