@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../types/firestore_types.dart';
 import '../providers/chain_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/video_provider.dart';
 
 class ChainGrid extends StatelessWidget {
   final List<ChainDocument> chains;
@@ -58,14 +59,32 @@ class ChainGrid extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: Stack(
               children: [
-                // Chain Preview (first video thumbnail or placeholder)
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.1),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.video_library, size: 48),
-                  ),
+                // Chain Preview (first video thumbnail)
+                Consumer<VideoProvider>(
+                  builder: (context, videoProvider, child) {
+                    // Get the first video in the chain
+                    final firstVideoId = chain.videoIds.isNotEmpty ? chain.videoIds.first : null;
+                    final firstVideo = firstVideoId != null ? videoProvider.getVideoById(firstVideoId) : null;
+
+                    if (firstVideo?.thumbnailUrl != null) {
+                      return Image.network(
+                        firstVideo!.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                      );
+                    }
+
+                    // Fallback if no thumbnail available
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.1),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.video_library, size: 48),
+                      ),
+                    );
+                  },
                 ),
                 
                 // Chain Info Overlay

@@ -7,6 +7,7 @@ class VideoGrid extends StatelessWidget {
   final bool isLoading;
   final String? errorMessage;
   final void Function(String videoId)? onVideoTap;
+  final Set<String>? selectedVideoIds;  // Optional set of selected video IDs
 
   const VideoGrid({
     super.key,
@@ -14,6 +15,7 @@ class VideoGrid extends StatelessWidget {
     this.isLoading = false,
     this.errorMessage,
     this.onVideoTap,
+    this.selectedVideoIds,
   });
 
   @override
@@ -50,9 +52,43 @@ class VideoGrid extends StatelessWidget {
       itemCount: videos.length,
       itemBuilder: (context, index) {
         final video = videos[index];
+        final isSelected = selectedVideoIds?.contains(video.id) ?? false;
+
         return GestureDetector(
           onTap: () => onVideoTap?.call(video.id),
-          child: VideoThumbnail(video: video),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              VideoThumbnail(video: video),
+              if (selectedVideoIds != null)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: isSelected 
+                        ? Colors.blue.withOpacity(0.3)
+                        : Colors.transparent,
+                    border: Border.all(
+                      color: isSelected ? Colors.blue : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              if (selectedVideoIds != null && isSelected)
+                const Positioned(
+                  top: 8,
+                  right: 8,
+                  child: CircleAvatar(
+                    radius: 12,
+                    backgroundColor: Colors.blue,
+                    child: Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );

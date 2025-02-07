@@ -14,6 +14,8 @@ import 'profile_screen.dart';
 import '../widgets/video_grid_view.dart';
 import 'home_screen.dart';
 import '../widgets/authenticated_view.dart';
+import '../widgets/add_to_chain_sheet.dart';
+import 'create_chain_screen.dart';
 
 /// Represents the current video state
 class CurrentVideoState {
@@ -404,6 +406,51 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                         '${video.likes}',
                                         style: const TextStyle(color: Colors.white),
                                       ),
+                                      const SizedBox(width: 16),
+                                      // Add to Chain button
+                                      if (userId != null) // Only show if user is logged in
+                                        GestureDetector(
+                                          onTap: () async {
+                                            final result = await showModalBottomSheet<bool>(
+                                              context: context,
+                                              isScrollControlled: true,
+                                              backgroundColor: Colors.white,
+                                              shape: const RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.vertical(
+                                                  top: Radius.circular(16),
+                                                ),
+                                              ),
+                                              builder: (context) => SizedBox(
+                                                height: MediaQuery.of(context).size.height * 0.7,
+                                                child: AddToChainSheet(
+                                                  videoId: video.id,
+                                                  userId: userId,
+                                                ),
+                                              ),
+                                            );
+
+                                            if (result == true && mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Added to chain successfully'),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          child: const Row(
+                                            children: [
+                                              Icon(
+                                                Icons.playlist_add,
+                                                color: Colors.white,
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'Add to Chain',
+                                                style: TextStyle(color: Colors.white),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                     ],
                                   );
                                 },

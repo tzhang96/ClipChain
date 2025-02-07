@@ -47,24 +47,35 @@ class ChainDocument {
   - [x] Chain likes management
 - [x] Add chains collection to Firestore ✓
 - [x] Update security rules for chains ✓
+- [x] Add necessary Firestore indexes ✓
 
 ### Phase 2: Core UI Components 🚀
-- [ ] Create ChainGridView widget (similar to VideoGridView)
-  - [ ] Display chain title and thumbnail
-  - [ ] Show video count
-  - [ ] Add like button/count
+- [x] Create ChainGridView widget (similar to VideoGridView)
+  - [x] Display chain title and thumbnail
+  - [x] Show video count
+  - [x] Add like button/count
+- [x] Add Chains tab to Profile screen
+  - [x] Update TabData to support chains
+  - [x] Add chains grid view
+- [x] Create Chain creation interface
+  - [x] Title and description input form
+  - [x] Video selection interface
+    - [x] Grid view of user's videos
+    - [x] Multi-select functionality with visual feedback
+    - [x] Selected videos preview
+  - [x] Save/cancel actions
+  - [x] Loading and error states
+- [ ] Add "Add to Chain" button in video feed 👈 Next Priority
+  - [ ] Chain selection dialog
+    - [ ] List of existing chains
+    - [ ] "Create New Chain" option
+    - [ ] Loading and error states
+  - [ ] New chain creation shortcut
+  - [ ] Success/error feedback
 - [ ] Create ChainFeedSource for navigation
+  - [ ] Create ChainFeedScreen for viewing chain contents
   - [ ] Implement buildReturnScreen
   - [ ] Handle chain-specific navigation
-- [ ] Add Chains tab to Profile screen
-  - [ ] Update TabData to support chains
-  - [ ] Add chains grid view
-- [ ] Create Chain creation interface
-  - [ ] Title and description input
-  - [ ] Video selection/reordering
-- [ ] Add "Add to Chain" button in video feed
-  - [ ] Chain selection dialog
-  - [ ] New chain creation shortcut
 
 ### Phase 3: Chain Management
 - [ ] Chain editing interface

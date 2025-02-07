@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../screens/upload_video_screen.dart';
+import '../screens/create_screen.dart';
 
 class AppNavigationBar extends StatelessWidget {
   final int selectedIndex;
@@ -17,14 +17,17 @@ class AppNavigationBar extends StatelessWidget {
 
   void _onNavBarTap(BuildContext context, int index) async {
     if (index == 1) {
-      // Open upload screen when "Create" is tapped
-      final videoId = await Navigator.of(context).push<String>(
+      // Open create screen when "Create" is tapped
+      final result = await Navigator.of(context).push<String>(
         MaterialPageRoute(
-          builder: (context) => const UploadVideoScreen(),
+          builder: (context) => const CreateScreen(),
         ),
       );
 
-      onVideoUploaded(videoId);
+      // If we got back a video or chain ID, pass it to the appropriate handler
+      if (result != null) {
+        onVideoUploaded(result);
+      }
     } else if (index == 0) {
       onFeedTap(index);
     } else if (index == 2) {
