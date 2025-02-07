@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/video_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/likes_provider.dart';
+import '../types/firestore_types.dart';
 
 class VideoThumbnail extends StatelessWidget {
-  final VideoModel video;
+  final VideoDocument video;
 
   const VideoThumbnail({
     super.key,

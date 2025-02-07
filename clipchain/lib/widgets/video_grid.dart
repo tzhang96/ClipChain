@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../models/video_model.dart';
+import '../types/firestore_types.dart';
 import 'video_thumbnail.dart';
 
 class VideoGrid extends StatelessWidget {
-  final List<VideoModel> videos;
+  final List<VideoDocument> videos;
   final bool isLoading;
   final String? errorMessage;
   final void Function(String videoId)? onVideoTap;

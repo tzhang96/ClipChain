@@ -6,10 +6,9 @@ import '../providers/video_provider.dart';
 import '../providers/likes_provider.dart';
 import '../widgets/video_grid_view.dart';
 import '../types/firestore_types.dart';
-import 'home_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  final String? userId; // If null, shows current user's profile
+  final String? userId;
 
   const ProfileScreen({
     super.key,
@@ -17,72 +16,58 @@ class ProfileScreen extends StatefulWidget {
   });
 
   @override
-  State<ProfileScreen> createState() => ProfileScreenState();
+  State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Schedule initialization after the first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
-  }
-
-  /// Public method to refresh data
-  void refreshVideos() {
-    // Schedule loading after the current frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
+    _loadData();
   }
 
   Future<void> _loadData() async {
     if (!mounted) return;
+
+    final userId = widget.userId ?? 
+        Provider.of<AuthProvider>(context, listen: false).user?.uid;
     
-    try {
-      final userId = widget.userId ?? 
-          Provider.of<AuthProvider>(context, listen: false).user?.uid;
-      
-      if (userId == null) {
-        throw Exception('No user ID available');
-      }
+    if (userId == null) return;
 
-      final videoProvider = Provider.of<VideoProvider>(context, listen: false);
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final likesProvider = Provider.of<LikesProvider>(context, listen: false);
-      
-      await Future.wait([
-        videoProvider.fetchUserVideos(userId),
-        userProvider.fetchUser(userId),
-        likesProvider.loadUserLikes(userId),
-      ]);
-
-    } catch (e) {
-      print('ProfileScreen: Error loading data: $e');
-    }
-  }
-
-  void _onVideoTap(String videoId) {
-    // Find the ancestor HomeScreen's state and navigate to the video
-    final homeState = context.findAncestorStateOfType<HomeScreenState>();
-    if (homeState != null) {
-      homeState.showVideo(videoId);
-    }
+    final videoProvider = Provider.of<VideoProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final likesProvider = Provider.of<LikesProvider>(context, listen: false);
+    
+    await Future.wait([
+      videoProvider.fetchUserVideos(userId),
+      userProvider.fetchUser(userId),
+      likesProvider.loadUserLikes(userId),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
-    final videoProvider = context.watch<VideoProvider>();
     final userProvider = context.watch<UserProvider>();
+    final videoProvider = context.watch<VideoProvider>();
     final likesProvider = context.watch<LikesProvider>();
     
-    final userId = widget.userId ?? authProvider.user?.uid;
+    final targetUserId = widget.userId ?? authProvider.user?.uid;
     final isCurrentUser = widget.userId == null || widget.userId == authProvider.user?.uid;
-    final userVideos = userId != null ? videoProvider.getVideosByUserId(userId) : <VideoDocument>[];
-    final userData = userId != null ? userProvider.getUser(userId) : null;
+    final userVideos = targetUserId != null ? videoProvider.getVideosByUserId(targetUserId) : <VideoDocument>[];
+    final userData = targetUserId != null ? userProvider.getUser(targetUserId) : null;
+
+    if (targetUserId == null) {
+      return const Center(child: Text('Not logged in'));
+    }
+
+    if (userData == null) {
+      // Fetch user data if not available
+      if (!userProvider.isLoading(targetUserId)) {
+        userProvider.fetchUser(targetUserId);
+      }
+      return const Center(child: CircularProgressIndicator());
+    }
 
     // Build tabs data
     final tabs = [
@@ -95,30 +80,30 @@ class ProfileScreenState extends State<ProfileScreen> {
       if (isCurrentUser)
         TabData(
           label: 'Liked',
-          videos: userId != null
-            ? likesProvider.getLikedVideoIds(userId)
-                .map((id) => videoProvider.getVideoById(id))
-                .where((video) => video != null)
-                .map((video) => video!)
-                .toList()
-            : <VideoDocument>[],
+          videos: likesProvider.getLikedVideoIds(targetUserId)
+              .map((id) => videoProvider.getVideoById(id))
+              .where((video) => video != null)
+              .map((video) => video!)
+              .toList(),
           isLoading: likesProvider.isLoading,
           errorMessage: likesProvider.error,
         ),
     ];
 
     return VideoGridView(
-      showBackButton: widget.userId != null, // Show back button if viewing another user's profile
+      selectedIndex: 2, // Profile is always index 2
+      title: userData.username,
+      showBackButton: widget.userId != null,
       header: Container(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             CircleAvatar(
               radius: 40,
-              backgroundImage: userData?.photoUrl != null
-                  ? NetworkImage(userData!.photoUrl!)
+              backgroundImage: userData.photoUrl != null
+                  ? NetworkImage(userData.photoUrl!)
                   : null,
-              child: userData?.photoUrl == null
+              child: userData.photoUrl == null
                   ? const Icon(Icons.person, size: 40)
                   : null,
             ),
@@ -128,7 +113,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    userData?.username ?? 'Loading...',
+                    userData.username,
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   Text(
@@ -147,7 +132,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
       tabs: tabs,
-      onVideoTap: _onVideoTap,
     );
   }
 } 

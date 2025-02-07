@@ -20,7 +20,7 @@ class HomeScreen extends StatefulWidget {
 class HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final GlobalKey<VideoFeedScreenState> _feedKey = GlobalKey();
-  final GlobalKey<ProfileScreenState> _profileKey = GlobalKey();
+  String? _profileUserId;  // Add this to track which user's profile to show
 
   @override
   void initState() {
@@ -38,6 +38,13 @@ class HomeScreenState extends State<HomeScreen> {
     _feedKey.currentState?.navigateToVideo(videoId);
   }
 
+  void showProfile(String userId) {
+    setState(() {
+      _selectedIndex = 2; // Switch to profile tab
+      _profileUserId = userId;
+    });
+  }
+
   void _onNavBarTap(int index) async {
     if (index == 1) {
       // Open upload screen when "Create" is tapped
@@ -50,11 +57,14 @@ class HomeScreenState extends State<HomeScreen> {
       // If we got back a video ID, navigate to it in the feed
       if (videoId != null) {
         showVideo(videoId);
-        // Refresh profile videos
-        _profileKey.currentState?.refreshVideos();
       }
     } else {
-      setState(() => _selectedIndex = index);
+      setState(() {
+        _selectedIndex = index;
+        if (index == 2) {
+          _profileUserId = null; // Reset to current user's profile when manually navigating
+        }
+      });
     }
   }
 
@@ -69,24 +79,8 @@ class HomeScreenState extends State<HomeScreen> {
             title: 'For You',
           ),
           Container(), // Placeholder for Create tab (handled by navigation)
-          ProfileScreen(key: _profileKey), // Current user's profile
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onNavBarTap,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Feed',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            label: 'Create',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
+          ProfileScreen(
+            userId: _profileUserId,
           ),
         ],
       ),
