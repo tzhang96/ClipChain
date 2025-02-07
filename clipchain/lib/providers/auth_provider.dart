@@ -22,17 +22,22 @@ class AuthProvider with ChangeNotifier {
     
     // Listen to auth state changes
     _authService.authStateChanges.listen((User? user) {
-      _user = user;
-      notifyListeners();
+      Future.microtask(() {
+        _user = user;
+        notifyListeners();
+      });
     });
   }
 
   Future<void> signUp(String email, String password) async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-      
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      });
+
       // Create Firebase Auth user
       final userCredential = await _authService.signUpWithEmailAndPassword(email, password);
       final user = userCredential.user;
@@ -56,50 +61,72 @@ class AuthProvider with ChangeNotifier {
           .doc(user.uid)
           .set(userDoc.toMap());
 
+      // Auth state listener will handle the state update
     } on FirebaseAuthException catch (e) {
-      _error = e.message ?? 'An error occurred during sign up';
-      rethrow;
+      // Schedule error state update
+      Future.microtask(() {
+        _error = e.message ?? 'An error occurred during sign up';
+        _isLoading = false;
+        notifyListeners();
+      });
     } catch (e) {
-      _error = 'An unexpected error occurred';
-      rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      // Schedule error state update
+      Future.microtask(() {
+        _error = 'An unexpected error occurred';
+        _isLoading = false;
+        notifyListeners();
+      });
     }
   }
 
   Future<void> signIn(String email, String password) async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-      
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      });
+
       await _authService.signInWithEmailAndPassword(email, password);
+
+      // Auth state listener will handle the state update
     } on FirebaseAuthException catch (e) {
-      _error = e.message ?? 'An error occurred during sign in';
-      rethrow;
+      // Schedule error state update
+      Future.microtask(() {
+        _error = e.message ?? 'An error occurred during sign in';
+        _isLoading = false;
+        notifyListeners();
+      });
     } catch (e) {
-      _error = 'An unexpected error occurred';
-      rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      // Schedule error state update
+      Future.microtask(() {
+        _error = 'An unexpected error occurred';
+        _isLoading = false;
+        notifyListeners();
+      });
     }
   }
 
   Future<void> signOut() async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-      
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      });
+
       await _authService.signOut();
+
+      // Auth state listener will handle the state update
     } catch (e) {
-      _error = 'Failed to sign out';
-      rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      // Schedule error state update
+      Future.microtask(() {
+        _error = 'Failed to sign out';
+        _isLoading = false;
+        notifyListeners();
+      });
     }
   }
 

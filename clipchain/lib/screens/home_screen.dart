@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import 'video_feed_screen.dart';
 import 'upload_video_screen.dart';
 import 'profile_screen.dart';
+import 'main_feed_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String? initialVideoId;
@@ -19,7 +20,7 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-  final GlobalKey<VideoFeedScreenState> _feedKey = GlobalKey();
+  final MainFeedKey _feedKey = const MainFeedKey();
   String? _profileUserId;  // Add this to track which user's profile to show
 
   @override
@@ -74,9 +75,8 @@ class HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          VideoFeedScreen(
-            key: _feedKey,
-            title: 'For You',
+          MainFeedScreen(
+            feedKey: _feedKey,
           ),
           Container(), // Placeholder for Create tab (handled by navigation)
           ProfileScreen(

@@ -7,6 +7,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'config/cloudinary_config.dart';
+import 'app_data_initializer.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,23 +25,7 @@ void main() async {
     await CloudinaryConfig.initialize();
     print('All services initialized successfully');
     
-    runApp(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AuthProvider()),
-          ChangeNotifierProvider(create: (_) => VideoProvider()),
-          ChangeNotifierProvider(create: (_) => UserProvider()),
-          ChangeNotifierProvider(
-            create: (context) {
-              final likesProvider = LikesProvider();
-              likesProvider.initialize(context.read<VideoProvider>());
-              return likesProvider;
-            },
-          ),
-        ],
-        child: const MyApp(),
-      ),
-    );
+    runApp(const App());
   } catch (e) {
     print('Error during app initialization: $e');
     // You may want to show an error screen here instead of crashing
@@ -48,36 +33,27 @@ void main() async {
   }
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
-
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  @override
-  void reassemble() {
-    super.reassemble();
-    // Reinitialize Cloudinary on hot reload
-    CloudinaryConfig.reinitialize().then((_) {
-      print('Cloudinary reinitialized after hot reload');
-    }).catchError((error) {
-      print('Error reinitializing Cloudinary after hot reload: $error');
-    });
-  }
+class App extends StatelessWidget {
+  const App({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AuthProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => VideoProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => LikesProvider()),
+      ],
       child: MaterialApp(
         title: 'ClipChain',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
           useMaterial3: true,
         ),
-        home: const AuthWrapper(),
+        home: const AppDataInitializer(
+          child: AuthWrapper(),
+        ),
         routes: {
           '/signup': (context) => const SignupScreen(),
           '/feed': (context) {

@@ -8,13 +8,13 @@ class LikesProvider with ChangeNotifier {
   late final VideoProvider _videoProvider;
   
   // Cache of liked video IDs for each user
-  final Map<String, Set<String>> _userLikes = {};
+  Map<String, Set<String>> _userLikes = {}; // userId -> Set of videoIds
   
   // Loading states
-  final Map<String, bool> _loadingStates = {};
+  bool _isLoading = false;
   String? _error;
 
-  bool get isLoading => _loadingStates.values.any((loading) => loading);
+  bool get isLoading => _isLoading;
   String? get error => _error;
 
   void initialize(VideoProvider videoProvider) {
@@ -29,91 +29,108 @@ class LikesProvider with ChangeNotifier {
   /// Toggle like status for a video
   Future<void> toggleLike(String userId, String videoId) async {
     try {
-      _loadingStates[videoId] = true;
-      _error = null;
-      notifyListeners();
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      });
 
-      final likeRef = _firestore
-          .collection(FirestorePaths.likes)
-          .doc('${userId}_${videoId}');
+      final isLiked = isVideoLiked(userId, videoId);
       
-      final videoRef = _firestore
-          .collection(FirestorePaths.videos)
-          .doc(videoId);
+      if (isLiked) {
+        // Unlike
+        await _firestore
+            .collection(FirestorePaths.likes)
+            .where('userId', isEqualTo: userId)
+            .where('videoId', isEqualTo: videoId)
+            .get()
+            .then((snapshot) {
+          return Future.wait(
+            snapshot.docs.map((doc) => doc.reference.delete()),
+          );
+        });
 
-      final likeDoc = await likeRef.get();
-      final videoDoc = await videoRef.get();
-      
-      if (!videoDoc.exists) throw Exception('Video not found');
-      final currentLikes = (videoDoc.data()?['likes'] as int?) ?? 0;
-      final newLikeCount = likeDoc.exists ? currentLikes - 1 : currentLikes + 1;
+        // Update video likes count
+        await _firestore
+            .collection(FirestorePaths.videos)
+            .doc(videoId)
+            .update({'likes': FieldValue.increment(-1)});
 
-      if (likeDoc.exists) {
-        // Unlike: Delete like document and decrement count
-        await likeRef.delete();
-        await videoRef.update({'likes': newLikeCount});
-        
-        // Update local cache
-        _userLikes[userId]?.remove(videoId);
+        // Schedule state update
+        Future.microtask(() {
+          _userLikes[userId]?.remove(videoId);
+          _isLoading = false;
+          notifyListeners();
+        });
+
       } else {
-        // Like: Create like document and increment count
-        final like = LikeDocument(
-          id: likeRef.id,
-          videoId: videoId,
-          userId: userId,
-          createdAt: Timestamp.now(),
-        );
-        
-        await likeRef.set(like.toMap());
-        await videoRef.update({'likes': newLikeCount});
-        
-        // Update local cache
-        _userLikes[userId] ??= {};
-        _userLikes[userId]!.add(videoId);
+        // Like
+        await _firestore
+            .collection(FirestorePaths.likes)
+            .add({
+              'userId': userId,
+              'videoId': videoId,
+              'createdAt': Timestamp.now(),
+            });
+
+        // Update video likes count
+        await _firestore
+            .collection(FirestorePaths.videos)
+            .doc(videoId)
+            .update({'likes': FieldValue.increment(1)});
+
+        // Schedule state update
+        Future.microtask(() {
+          _userLikes.putIfAbsent(userId, () => {}).add(videoId);
+          _isLoading = false;
+          notifyListeners();
+        });
       }
 
-      // Update the video in VideoProvider's cache
-      final updatedDoc = await videoRef.get();
-      final updatedData = updatedDoc.data() as Map<String, dynamic>;
-      updatedData['id'] = videoId;
-      
-      final updatedVideo = VideoDocument.fromMap(updatedData);
-      _videoProvider.updateVideoInCache(updatedVideo);
-
-      // Notify listeners after the update
-      notifyListeners();
-
     } catch (e) {
-      _error = 'Failed to toggle like: $e';
-      print(_error);
-    } finally {
-      _loadingStates[videoId] = false;
-      notifyListeners();
+      // Schedule error state update
+      Future.microtask(() {
+        _error = 'Failed to toggle like: $e';
+        _isLoading = false;
+        notifyListeners();
+      });
     }
   }
 
   /// Load liked videos for a user
   Future<void> loadUserLikes(String userId) async {
     try {
-      _loadingStates[userId] = true;
-      _error = null;
-      notifyListeners();
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      });
 
-      final likesSnapshot = await _firestore
+      final QuerySnapshot likesSnapshot = await _firestore
           .collection(FirestorePaths.likes)
           .where('userId', isEqualTo: userId)
           .get();
 
-      _userLikes[userId] = likesSnapshot.docs
-          .map((doc) => doc.data()['videoId'] as String)
+      final likes = likesSnapshot.docs
+          .map((doc) => doc.get('videoId') as String)
           .toSet();
 
+      // Schedule state update after async complete
+      Future.microtask(() {
+        _userLikes[userId] = likes;
+        _isLoading = false;
+        notifyListeners();
+      });
+
     } catch (e) {
-      _error = 'Failed to load likes: $e';
-      print(_error);
-    } finally {
-      _loadingStates[userId] = false;
-      notifyListeners();
+      // Schedule error state update
+      Future.microtask(() {
+        _error = 'Failed to load likes: $e';
+        _isLoading = false;
+        notifyListeners();
+      });
     }
   }
 

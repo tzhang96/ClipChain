@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import '../models/video_model.dart';
 import '../types/firestore_types.dart';
+import '../models/feed_source.dart';
 import 'video_grid.dart';
 import '../screens/video_feed_screen.dart';
 import 'authenticated_view.dart';
+import '../screens/profile_screen.dart';
 
 class TabData {
   final String label;
   final List<VideoDocument> videos;
   final bool isLoading;
   final String? errorMessage;
+  final FeedSource? feedSource;  // Optional source for the feed when tapping videos
 
   const TabData({
     required this.label,
     required this.videos,
     this.isLoading = false,
     this.errorMessage,
+    this.feedSource,
   });
 }
 
@@ -26,6 +30,7 @@ class VideoGridView extends StatefulWidget {
   final bool showBackButton;
   final String? title;
   final int selectedIndex;
+  final String? userId;
 
   const VideoGridView({
     super.key,
@@ -35,6 +40,7 @@ class VideoGridView extends StatefulWidget {
     this.showBackButton = false,
     this.title,
     required this.selectedIndex,
+    this.userId,
   });
 
   @override
@@ -71,20 +77,34 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
     super.dispose();
   }
 
-  void _handleVideoTap(String videoId, List<VideoDocument> videos) {
+  void _handleVideoTap(String videoId, TabData tab) {
     if (widget.onVideoTap != null) {
       // If we have an external handler, use that
       widget.onVideoTap!(videoId);
     } else {
       // Navigate to feed view
-      final index = videos.indexWhere((v) => v.id == videoId);
+      final index = tab.videos.indexWhere((v) => v.id == videoId);
       if (index != -1) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (context) => VideoFeedScreen(
-              customVideos: videos,
+              customVideos: tab.videos,
               initialIndex: index,
-              title: widget.title,
+              title: tab.feedSource?.title ?? widget.title,
+              onHeaderTap: () {
+                if (tab.feedSource != null) {
+                  // Return to the source screen
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (context) => tab.feedSource!.buildReturnScreen(),
+                    ),
+                    (route) => false,
+                  );
+                } else {
+                  // Default behavior - just pop
+                  Navigator.of(context).pop();
+                }
+              },
             ),
           ),
           (route) => false,
@@ -138,7 +158,7 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
       videos: tab.videos,
       isLoading: tab.isLoading,
       errorMessage: tab.errorMessage,
-      onVideoTap: (videoId) => _handleVideoTap(videoId, tab.videos),
+      onVideoTap: (videoId) => _handleVideoTap(videoId, tab),
     );
   }
 } 

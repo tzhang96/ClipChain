@@ -58,39 +58,51 @@ class VideoProvider with ChangeNotifier {
   /// Fetch all videos (for feed)
   Future<void> fetchVideos() async {
     try {
-      _isLoadingFeed = true;
-      _feedError = null;
-      notifyListeners();
+      // Defer state update to next event loop iteration
+      Future.microtask(() {
+        _isLoadingFeed = true;
+        _feedError = null;
+        notifyListeners();
+      });
 
       final QuerySnapshot videoSnapshot = await _firestore
           .collection(FirestorePaths.videos)
           .orderBy('createdAt', descending: true)
           .get();
 
-      _videos = videoSnapshot.docs
+      final newVideos = videoSnapshot.docs
           .map((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            data['id'] = doc.id; // Ensure the document ID is included
+            data['id'] = doc.id;
             return VideoDocument.fromMap(data);
           })
           .toList();
 
+      // Schedule state update after async complete
+      Future.microtask(() {
+        _videos = newVideos;
+        _isLoadingFeed = false;
+        notifyListeners();
+      });
+
     } catch (e) {
-      _feedError = 'Failed to fetch videos: $e';
-      print(_feedError);
-    } finally {
-      _isLoadingFeed = false;
-      // Schedule the notification for the next frame
-      Future.microtask(() => notifyListeners());
+      Future.microtask(() {
+        _feedError = 'Failed to fetch videos: $e';
+        _isLoadingFeed = false;
+        notifyListeners();
+      });
     }
   }
 
   /// Fetch videos for a specific user
   Future<void> fetchUserVideos(String userId) async {
     try {
-      _isLoadingUserVideos = true;
-      _userVideosError = null;
-      notifyListeners();
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoadingUserVideos = true;
+        _userVideosError = null;
+        notifyListeners();
+      });
 
       final QuerySnapshot videoSnapshot = await _firestore
           .collection(FirestorePaths.videos)
@@ -106,15 +118,20 @@ class VideoProvider with ChangeNotifier {
           })
           .toList();
 
-      _userVideos[userId] = userVideos;
+      // Schedule state update after async complete
+      Future.microtask(() {
+        _userVideos[userId] = userVideos;
+        _isLoadingUserVideos = false;
+        notifyListeners();
+      });
 
     } catch (e) {
-      _userVideosError = 'Failed to fetch user videos: $e';
-      print(_userVideosError);
-    } finally {
-      _isLoadingUserVideos = false;
-      // Schedule the notification for the next frame
-      Future.microtask(() => notifyListeners());
+      // Schedule error state update
+      Future.microtask(() {
+        _userVideosError = 'Failed to fetch user videos: $e';
+        _isLoadingUserVideos = false;
+        notifyListeners();
+      });
     }
   }
 
@@ -124,11 +141,14 @@ class VideoProvider with ChangeNotifier {
     required String userId,
   }) async {
     try {
-      _isLoadingFeed = true;
-      _isLoadingUserVideos = true;
-      _feedError = null;
-      _userVideosError = null;
-      notifyListeners();
+      // Defer initial state update
+      Future.microtask(() {
+        _isLoadingFeed = true;
+        _isLoadingUserVideos = true;
+        _feedError = null;
+        _userVideosError = null;
+        notifyListeners();
+      });
 
       // Upload to Cloudinary
       final urls = await _cloudinaryService.uploadVideo(File(filePath));
@@ -155,17 +175,25 @@ class VideoProvider with ChangeNotifier {
         fetchUserVideos(userId),
       ]);
 
+      // Schedule success state update
+      Future.microtask(() {
+        _isLoadingFeed = false;
+        _isLoadingUserVideos = false;
+        notifyListeners();
+      });
+
       return docRef.id;
 
     } catch (e) {
-      _feedError = 'Failed to upload video: $e';
-      _userVideosError = _feedError;
-      print(_feedError);
+      // Schedule error state update
+      Future.microtask(() {
+        _feedError = 'Failed to upload video: $e';
+        _userVideosError = _feedError;
+        _isLoadingFeed = false;
+        _isLoadingUserVideos = false;
+        notifyListeners();
+      });
       return null;
-    } finally {
-      _isLoadingFeed = false;
-      _isLoadingUserVideos = false;
-      notifyListeners();
     }
   }
 } 

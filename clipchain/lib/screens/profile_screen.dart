@@ -6,6 +6,7 @@ import '../providers/video_provider.dart';
 import '../providers/likes_provider.dart';
 import '../widgets/video_grid_view.dart';
 import '../types/firestore_types.dart';
+import '../models/feed_source.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -70,12 +71,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     // Build tabs data
+    final feedSource = ProfileFeedSource(
+      userId: targetUserId,
+      username: userData.username,
+    );
+
     final tabs = [
       TabData(
         label: 'Videos',
         videos: userVideos,
         isLoading: videoProvider.isLoadingUserVideos,
         errorMessage: videoProvider.userVideosError,
+        feedSource: feedSource,
       ),
       if (isCurrentUser)
         TabData(
@@ -87,6 +94,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               .toList(),
           isLoading: likesProvider.isLoading,
           errorMessage: likesProvider.error,
+          feedSource: feedSource,
         ),
     ];
 
@@ -94,6 +102,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       selectedIndex: 2, // Profile is always index 2
       title: userData.username,
       showBackButton: widget.userId != null,
+      userId: targetUserId,
       header: Container(
         padding: const EdgeInsets.all(16),
         child: Row(

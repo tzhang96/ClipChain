@@ -9,40 +9,76 @@ class UserProvider with ChangeNotifier {
   Map<String, bool> _loadingStates = {};
   Map<String, String?> _errors = {};
 
-  UserDocument? getUser(String userId) => _users[userId];
   bool isLoading(String userId) => _loadingStates[userId] ?? false;
   String? getError(String userId) => _errors[userId];
+  UserDocument? getUser(String userId) => _users[userId];
 
-  Future<UserDocument?> fetchUser(String userId) async {
+  Future<void> fetchUser(String userId) async {
     try {
-      _loadingStates[userId] = true;
-      _errors[userId] = null;
-      notifyListeners();
+      // Defer initial state update
+      Future.microtask(() {
+        _loadingStates[userId] = true;
+        _errors[userId] = null;
+        notifyListeners();
+      });
 
-      final docSnapshot = await _firestore
+      final userDoc = await _firestore
           .collection(FirestorePaths.users)
           .doc(userId)
           .get();
 
-      if (!docSnapshot.exists) {
-        _errors[userId] = 'User not found';
-        return null;
+      if (!userDoc.exists) {
+        throw Exception('User not found');
       }
 
-      final data = docSnapshot.data() as Map<String, dynamic>;
-      data['id'] = docSnapshot.id;
-      
-      final user = UserDocument.fromMap(data);
-      _users[userId] = user;
-      
-      return user;
+      final userData = userDoc.data() as Map<String, dynamic>;
+      userData['id'] = userId;
+
+      // Schedule state update after async complete
+      Future.microtask(() {
+        _users[userId] = UserDocument.fromMap(userData);
+        _loadingStates[userId] = false;
+        notifyListeners();
+      });
+
     } catch (e) {
-      _errors[userId] = 'Failed to fetch user: $e';
-      print(_errors[userId]);
-      return null;
-    } finally {
-      _loadingStates[userId] = false;
-      notifyListeners();
+      // Schedule error state update
+      Future.microtask(() {
+        _errors[userId] = 'Failed to fetch user: $e';
+        _loadingStates[userId] = false;
+        notifyListeners();
+      });
+    }
+  }
+
+  Future<void> updateUser(UserDocument user) async {
+    try {
+      // Defer initial state update
+      Future.microtask(() {
+        _loadingStates[user.id] = true;
+        _errors[user.id] = null;
+        notifyListeners();
+      });
+
+      await _firestore
+          .collection(FirestorePaths.users)
+          .doc(user.id)
+          .update(user.toMap());
+
+      // Schedule state update after async complete
+      Future.microtask(() {
+        _users[user.id] = user;
+        _loadingStates[user.id] = false;
+        notifyListeners();
+      });
+
+    } catch (e) {
+      // Schedule error state update
+      Future.microtask(() {
+        _errors[user.id] = 'Failed to update user: $e';
+        _loadingStates[user.id] = false;
+        notifyListeners();
+      });
     }
   }
 } 

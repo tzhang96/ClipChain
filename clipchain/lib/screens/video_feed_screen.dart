@@ -37,6 +37,7 @@ class VideoFeedScreen extends StatefulWidget {
   final int initialIndex;
   final String? title;
   final String? initialVideoId;
+  final VoidCallback? onHeaderTap;
 
   const VideoFeedScreen({
     super.key,
@@ -44,6 +45,7 @@ class VideoFeedScreen extends StatefulWidget {
     this.initialIndex = 0,
     this.title,
     this.initialVideoId,
+    this.onHeaderTap,
   });
 
   @override
@@ -232,11 +234,17 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('VideoFeedScreen: Building with title: ${widget.title}');
+    print('VideoFeedScreen: Has header tap handler: ${widget.onHeaderTap != null}');
+    
     final content = Scaffold(
       backgroundColor: Colors.black,
       body: Consumer<VideoProvider>(
         builder: (context, videoProvider, child) {
+          print('VideoFeedScreen: Building content');
+          
           if (videoProvider.isLoadingFeed) {
+            print('VideoFeedScreen: Showing loading state');
             return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -250,6 +258,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
           }
 
           if (videoProvider.feedError != null) {
+            print('VideoFeedScreen: Showing error state: ${videoProvider.feedError}');
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -268,11 +277,17 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
           }
 
           if (videoProvider.videos.isEmpty) {
+            print('VideoFeedScreen: Showing empty state');
             return const Center(
               child: Text('No videos available', style: TextStyle(color: Colors.white)),
             );
           }
 
+          print('VideoFeedScreen: Building video feed with ${videoProvider.videos.length} videos');
+          if (widget.title != null) {
+            print('VideoFeedScreen: Adding header with title: ${widget.title}');
+          }
+          
           return Stack(
             children: [
               PageView.builder(
@@ -407,7 +422,16 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                   left: 16,
                   right: 16,
                   child: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: () {
+                      print('VideoFeedScreen: Header tapped');
+                      if (widget.onHeaderTap != null) {
+                        print('VideoFeedScreen: Calling onHeaderTap handler');
+                        widget.onHeaderTap!();
+                      } else {
+                        print('VideoFeedScreen: No onHeaderTap handler provided');
+                        Navigator.of(context).pop();
+                      }
+                    },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
