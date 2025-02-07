@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloudinary_sdk/cloudinary_sdk.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../config/cloudinary_config.dart';
@@ -79,34 +80,42 @@ class CloudinaryService {
   /// Generates an optimized video URL with Cloudinary transformations
   String getOptimizedVideoUrl(String videoUrl) {
     try {
-      // Extract the base URL and video path
-      final urlParts = videoUrl.split('/upload/');
-      if (urlParts.length != 2) return videoUrl;
-
-      // If the URL already contains any transformations, return the original URL
-      if (urlParts[1].startsWith('f_') || urlParts[1].contains('/f_')) {
-        print('CloudinaryService: URL already has transformations, returning as is');
+      print('CloudinaryService: Original URL: $videoUrl');
+      
+      if (!videoUrl.contains('/upload/')) {
+        print('CloudinaryService: Invalid URL format - missing /upload/');
         return videoUrl;
       }
 
-      // Apply transformations optimized for emulator performance
+      // Split URL at /upload/ to preserve the base URL structure
+      final parts = videoUrl.split('/upload/');
+      if (parts.length != 2) {
+        print('CloudinaryService: Invalid URL structure');
+        return videoUrl;
+      }
+
+      // Build transformation string with proper syntax
       final transformations = [
-        'f_mp4',           // Force MP4 format
-        'vs_20',           // Very low video sampling (reduces quality but improves performance)
-        'w_360',           // Width: 360px (lower resolution)
-        'h_640',           // Height: 640px (16:9 aspect ratio)
-        'c_limit',         // Limit mode to prevent upscaling
-        'q_auto:low',      // Lowest quality
-        'ac_none',         // Remove audio if not needed
-        'br_500k',         // Limit bitrate to 500k
+        'c_scale',         // Scale mode
+        'w_320',           // Width
+        'h_240',           // Height
+        'q_auto:low',      // Auto quality, low setting
+        'vc_h264',         // Force H.264 codec
+        'f_mp4'            // Force MP4 format
       ].join(',');
-      
-      final optimizedUrl = '${urlParts[0]}/upload/$transformations/${urlParts[1]}';
-      print('CloudinaryService: Generated optimized URL: $optimizedUrl');
-      return optimizedUrl;
-    } catch (e) {
+
+      // Construct the final URL
+      final transformedUrl = '${parts[0]}/upload/$transformations/${parts[1]}';
+
+      print('CloudinaryService: Transformation parameters: $transformations');
+      print('CloudinaryService: Generated URL: $transformedUrl');
+
+      return transformedUrl;
+
+    } catch (e, stackTrace) {
       print('CloudinaryService: Error generating optimized URL: $e');
-      return videoUrl;  // Return original URL if transformation fails
+      print('CloudinaryService: Stack trace: $stackTrace');
+      return videoUrl;
     }
   }
 

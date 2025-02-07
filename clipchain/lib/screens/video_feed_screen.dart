@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
+import 'package:collection/collection.dart';
 import '../providers/video_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/auth_provider.dart';
@@ -17,19 +20,79 @@ import '../widgets/authenticated_view.dart';
 import '../widgets/add_to_chain_sheet.dart';
 import 'create_chain_screen.dart';
 
-/// Represents the current video state
+/// Represents the current video state with improved caching and hardware decoder management
 class CurrentVideoState {
+  static const int maxHardwareDecoders = 2;  // Limit concurrent hardware decoders
+  static int activeDecoders = 0;  // Track active hardware decoders
+  static bool _canUseHardwareDecoder = true;  // Global hardware decoder capability flag
+
   final int index;
   final String id;
   final VideoPlayerController controller;
+  bool isInitialized = false;
+  bool hasError = false;
+  String? errorMessage;
+  bool _isUsingHardwareDecoder = false;
 
-  const CurrentVideoState({
+  CurrentVideoState({
     required this.index,
     required this.id,
     required this.controller,
   });
 
+  static Future<void> checkDeviceCapabilities() async {
+    try {
+      // Check for known problematic GPUs
+      final renderer = await SystemChannels.skia.invokeMethod('getRenderer') as String;
+      if (renderer.contains('PowerVR') || renderer.contains('Mali-G31')) {
+        _canUseHardwareDecoder = false;
+        print('Forcing software decoding due to problematic GPU: $renderer');
+      }
+    } catch (e) {
+      print('Error checking GPU capabilities: $e');
+    }
+  }
+
+  Future<void> initialize() async {
+    if (isInitialized) return;
+    try {
+      if (_canUseHardwareDecoder && activeDecoders < maxHardwareDecoders) {
+        activeDecoders++;
+        _isUsingHardwareDecoder = true;
+        await controller.initialize().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            throw TimeoutException('Video initialization timed out');
+          },
+        );
+      } else {
+        // Force software decoder
+        _isUsingHardwareDecoder = false;
+        await controller.initialize();
+      }
+      isInitialized = true;
+      controller.setLooping(true);
+    } catch (e) {
+      if (_isUsingHardwareDecoder) {
+        // If hardware decoder fails, try software decoder
+        _isUsingHardwareDecoder = false;
+        activeDecoders--;
+        controller.dispose();
+        hasError = false;
+        errorMessage = null;
+        // Retry with software decoder will be handled by the parent widget
+      } else {
+        hasError = true;
+        errorMessage = e.toString();
+        print('Error initializing video: $e');
+      }
+    }
+  }
+
   void dispose() {
+    if (_isUsingHardwareDecoder) {
+      activeDecoders--;
+    }
     controller.dispose();
   }
 }
@@ -54,34 +117,82 @@ class VideoFeedScreen extends StatefulWidget {
   State<VideoFeedScreen> createState() => VideoFeedScreenState();
 }
 
-class VideoFeedScreenState extends State<VideoFeedScreen> {
+class VideoFeedScreenState extends State<VideoFeedScreen> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   static const _navigationTimeout = Duration(seconds: 5);
+  final int _preloadDistance = kIsWeb ? 2 : 1; // Removed const since kIsWeb is not const
 
   final PageController _pageController = PageController();
   final CloudinaryService _cloudinaryService = CloudinaryService();
+  final Map<int, CurrentVideoState> _videoCache = {};
+  
   bool _isInitializing = false;
-
-  CurrentVideoState? _currentVideo;
-  bool _isVideoInitializing = false;
   String? _loadingError;
   bool _isNavigating = false;
   Timer? _navigationTimer;
+  int _currentIndex = 0;
+  bool _showVideo = true;
+  NetworkImage? _fallbackImage;
 
   List<VideoDocument> get _videos => widget.customVideos ?? context.read<VideoProvider>().videos;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     print('VideoFeedScreen: initState called');
-    // Schedule initialization after the first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await CurrentVideoState.checkDeviceCapabilities();
       _initializeFirstVideo();
-      // Load likes for current user
-      final userId = context.read<AuthProvider>().user?.uid;
-      if (userId != null) {
-        context.read<LikesProvider>().loadUserLikes(userId);
-      }
     });
+  }
+
+  @override
+  void dispose() {
+    print('VideoFeedScreen: dispose called');
+    WidgetsBinding.instance.removeObserver(this);
+    _navigationTimer?.cancel();
+    _cleanupCache();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // App going to background - pause video and release resources
+      final currentVideo = _videoCache[_currentIndex];
+      if (currentVideo?.controller.value.isPlaying ?? false) {
+        currentVideo?.controller.pause();
+      }
+      _handleMemoryPressure();
+    }
+  }
+
+  void _handleMemoryPressure() {
+    // Keep only the current video and one adjacent video in each direction
+    final keysToKeep = <int>{
+      _currentIndex,
+      _currentIndex - 1,
+      _currentIndex + 1,
+    };
+
+    _videoCache.removeWhere((index, video) {
+      if (!keysToKeep.contains(index)) {
+        video.dispose();
+        return true;
+      }
+      return false;
+    });
+  }
+
+  void _cleanupCache() {
+    for (var video in _videoCache.values) {
+      video.dispose();
+    }
+    _videoCache.clear();
   }
 
   Future<void> _initializeFirstVideo() async {
@@ -95,115 +206,126 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
     }
 
     if (mounted && _videos.isNotEmpty) {
-      // Initialize at the specified initial index
       final initialIndex = widget.initialIndex.clamp(0, _videos.length - 1);
       if (_pageController.hasClients) {
         _pageController.jumpToPage(initialIndex);
       }
-      await _initializeVideo(initialIndex);
+      await _preloadVideos(initialIndex);
     }
   }
 
-  @override
-  void dispose() {
-    print('VideoFeedScreen: dispose called');
-    _navigationTimer?.cancel();
-    _cleanupCurrentVideo();
-    _pageController.dispose();
-    super.dispose();
-  }
+  Future<void> _preloadVideos(int centerIndex) async {
+    final start = (centerIndex - _preloadDistance).clamp(0, _videos.length - 1);
+    final end = (centerIndex + _preloadDistance).clamp(0, _videos.length - 1);
 
-  Future<void> _cleanupCurrentVideo() async {
-    final current = _currentVideo;
-    if (current != null) {
-      print('VideoFeedScreen: Cleaning up video at index ${current.index}');
-      await current.controller.pause();
-      current.dispose();
-      if (mounted) {
-        setState(() => _currentVideo = null);
+    for (var i = start; i <= end; i++) {
+      if (!_videoCache.containsKey(i)) {
+        await _initializeVideo(i, autoplay: i == centerIndex);
       }
     }
+
+    // Cleanup videos outside preload range
+    _videoCache.removeWhere((index, video) {
+      if (index < start || index > end) {
+        video.dispose();
+        return true;
+      }
+      return false;
+    });
   }
 
-  Future<void> _initializeVideo(int index) async {
-    if (_isInitializing) {
-      print('VideoFeedScreen: Video initialization already in progress');
-      return;
-    }
+  Future<void> _initializeVideo(int index, {bool autoplay = false}) async {
+    if (_isInitializing || index < 0 || index >= _videos.length) return;
+    
     _isInitializing = true;
-
     try {
-      if (_isVideoInitializing) {
-        print('VideoFeedScreen: Skipping video initialization - already initializing');
-        return;
-      }
-
-      if (index < 0 || index >= _videos.length) {
-        print('VideoFeedScreen: Invalid video index: $index');
-        return;
-      }
-
-      print('VideoFeedScreen: Starting video initialization for index $index');
-      setState(() => _isVideoInitializing = true);
-
-      await _cleanupCurrentVideo();
-
       final video = _videos[index];
+      print('VideoFeedScreen: Initializing video at index $index with ID: ${video.id}');
+      
       String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
       print('VideoFeedScreen: Optimized URL: $videoUrl');
 
-      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-      await controller.initialize();
-      controller.setLooping(true);
+      // Create fallback image URL first
+      final fallbackImageUrl = videoUrl
+        .replaceAll('/video/upload/', '/image/upload/')
+        .replaceAll('.mp4', '.jpg');
+      print('VideoFeedScreen: Fallback image URL: $fallbackImageUrl');
+
+      // Pre-load fallback image
+      _fallbackImage = NetworkImage(fallbackImageUrl);
       
-      if (mounted) {
-        setState(() {
-          _currentVideo = CurrentVideoState(
-            index: index,
-            id: video.id,
-            controller: controller,
-          );
-          _isVideoInitializing = false;
-        });
+      try {
+        print('VideoFeedScreen: Attempting to initialize video controller');
+        final controller = VideoPlayerController.networkUrl(
+          Uri.parse(videoUrl),
+          videoPlayerOptions: VideoPlayerOptions(
+            mixWithOthers: true,
+            allowBackgroundPlayback: false,
+          ),
+        );
+
+        // Set a shorter timeout for initialization
+        await controller.initialize().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            print('VideoFeedScreen: Video initialization timed out');
+            throw TimeoutException('Video initialization timed out');
+          },
+        );
+
+        print('VideoFeedScreen: Video controller initialized successfully');
         
-        // Only play if this is still the current page
-        if (_currentVideo?.index == index) {
-          print('VideoFeedScreen: Playing video at index $index');
-          controller.play();
+        if (mounted) {
+          setState(() {
+            _showVideo = true;
+            _videoCache[index] = CurrentVideoState(
+              index: index,
+              id: video.id,
+              controller: controller,
+            );
+          });
+
+          if (autoplay) {
+            print('VideoFeedScreen: Starting autoplay');
+            await controller.play();
+          }
+        }
+      } catch (e) {
+        print('VideoFeedScreen: Failed to initialize video: $e');
+        // Fallback to static image
+        if (mounted) {
+          setState(() {
+            _showVideo = false;
+          });
         }
       }
+
     } catch (e) {
-      print('VideoFeedScreen: Error initializing video: $e');
-      if (mounted) {
-        setState(() {
-          _isVideoInitializing = false;
-          _loadingError = _getErrorMessage(e);
-        });
-      }
+      print('VideoFeedScreen: Error in _initializeVideo: $e');
     } finally {
       _isInitializing = false;
     }
   }
 
-  String _getErrorMessage(dynamic error) {
-    if (error is PlatformException) {
-      return 'Video playback error: ${error.message}';
-    }
-    return 'Error: ${error.toString()}';
-  }
-
   void _onPageChanged(int index) async {
-    print('VideoFeedScreen: Page changed to index $index');
-    if (!_isNavigating) {  // Only handle page changes from user scrolling
-      await _initializeVideo(index);
+    if (_isNavigating) return;
+    
+    setState(() => _currentIndex = index);
+    
+    // Pause previous video
+    final previousVideo = _videoCache[_currentIndex - 1];
+    if (previousVideo?.controller.value.isPlaying ?? false) {
+      await previousVideo?.controller.pause();
     }
-  }
 
-  void _startNavigationTimeout() {
-    _navigationTimer?.cancel();
-    _navigationTimer = Timer(_navigationTimeout, () {
-      _isNavigating = false;
-    });
+    // Play current video
+    final currentVideo = _videoCache[index];
+    if (currentVideo?.isInitialized ?? false) {
+      await currentVideo?.controller.play();
+    }
+
+    // Preload adjacent videos
+    await _preloadVideos(index);
   }
 
   // Navigate to a specific video by ID
@@ -234,8 +356,17 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
+  void _startNavigationTimeout() {
+    _navigationTimer?.cancel();
+    _navigationTimer = Timer(_navigationTimeout, () {
+      _isNavigating = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    
     print('VideoFeedScreen: Building with title: ${widget.title}');
     print('VideoFeedScreen: Has header tap handler: ${widget.onHeaderTap != null}');
     
@@ -243,10 +374,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
       backgroundColor: Colors.black,
       body: Consumer<VideoProvider>(
         builder: (context, videoProvider, child) {
-          print('VideoFeedScreen: Building content');
-          
           if (videoProvider.isLoadingFeed) {
-            print('VideoFeedScreen: Showing loading state');
             return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -278,18 +406,12 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
             );
           }
 
-          if (videoProvider.videos.isEmpty) {
-            print('VideoFeedScreen: Showing empty state');
+          if (_videos.isEmpty) {
             return const Center(
               child: Text('No videos available', style: TextStyle(color: Colors.white)),
             );
           }
 
-          print('VideoFeedScreen: Building video feed with ${videoProvider.videos.length} videos');
-          if (widget.title != null) {
-            print('VideoFeedScreen: Adding header with title: ${widget.title}');
-          }
-          
           return Stack(
             children: [
               PageView.builder(
@@ -299,166 +421,45 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                 itemCount: _videos.length,
                 itemBuilder: (context, index) {
                   final video = _videos[index];
+                  final videoState = _videoCache[index];
                   
-                  return GestureDetector(
-                    onTap: () {
-                      if (_currentVideo?.controller.value.isPlaying ?? false) {
-                        _currentVideo?.controller.pause();
-                      } else {
-                        _currentVideo?.controller.play();
-                      }
-                    },
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (_currentVideo?.controller != null &&
-                            _currentVideo?.index == index &&
-                            _currentVideo!.controller.value.isInitialized)
-                          VideoPlayer(_currentVideo!.controller)
-                        else
-                          const Center(child: CircularProgressIndicator()),
-                        
-                        // Video Info Overlay
-                        Positioned(
-                          bottom: 80,
-                          left: 16,
-                          right: 16,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // User Info Row
-                              Consumer<UserProvider>(
-                                builder: (context, userProvider, child) {
-                                  final user = userProvider.getUser(video.userId);
-                                  
-                                  // Fetch user data if not available
-                                  if (user == null && !userProvider.isLoading(video.userId)) {
-                                    // Schedule the fetch after the current build
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (mounted) {
-                                        userProvider.fetchUser(video.userId);
-                                      }
-                                    });
-                                  }
-
-                                  return GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(context).pushAndRemoveUntil(
-                                        MaterialPageRoute(
-                                          builder: (context) => ProfileScreen(userId: video.userId),
-                                        ),
-                                        (route) => false,
-                                      );
-                                    },
-                                    child: Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 20,
-                                          backgroundImage: user?.photoUrl != null
-                                              ? NetworkImage(user!.photoUrl!)
-                                              : null,
-                                          child: user?.photoUrl == null
-                                              ? const Icon(Icons.person)
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          user?.username ?? 'Loading...',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
+                  return Container(
+                    key: ValueKey(video.id),
+                    color: Colors.black,
+                    child: GestureDetector(
+                      onTap: () {
+                        if (videoState?.controller.value.isPlaying ?? false) {
+                          videoState?.controller.pause();
+                        } else {
+                          videoState?.controller.play();
+                        }
+                      },
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (videoState?.isInitialized ?? false)
+                            _showVideo 
+                              ? VideoPlayer(videoState!.controller)
+                              : (_fallbackImage != null 
+                                  ? Image(image: _fallbackImage!, fit: BoxFit.cover)
+                                  : const Center(child: CircularProgressIndicator()))
+                          else if (videoState?.hasError ?? false)
+                            Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Error loading video: ${videoState?.errorMessage}',
+                                    style: const TextStyle(color: Colors.white),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                video.description,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Consumer2<AuthProvider, LikesProvider>(
-                                builder: (context, authProvider, likesProvider, child) {
-                                  final userId = authProvider.user?.uid;
-                                  final isLiked = userId != null && 
-                                      likesProvider.isVideoLiked(userId, video.id);
-
-                                  return Row(
-                                    children: [
-                                      GestureDetector(
-                                        onTap: userId == null ? null : () {
-                                          likesProvider.toggleLike(userId, video.id);
-                                        },
-                                        child: Icon(
-                                          isLiked ? Icons.favorite : Icons.favorite_border,
-                                          color: isLiked ? Colors.red : Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${video.likes}',
-                                        style: const TextStyle(color: Colors.white),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      // Add to Chain button
-                                      if (userId != null) // Only show if user is logged in
-                                        GestureDetector(
-                                          onTap: () async {
-                                            final result = await showModalBottomSheet<bool>(
-                                              context: context,
-                                              isScrollControlled: true,
-                                              backgroundColor: Colors.white,
-                                              shape: const RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.vertical(
-                                                  top: Radius.circular(16),
-                                                ),
-                                              ),
-                                              builder: (context) => SizedBox(
-                                                height: MediaQuery.of(context).size.height * 0.7,
-                                                child: AddToChainSheet(
-                                                  videoId: video.id,
-                                                  userId: userId,
-                                                ),
-                                              ),
-                                            );
-
-                                            if (result == true && mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text('Added to chain successfully'),
-                                                ),
-                                              );
-                                            }
-                                          },
-                                          child: const Row(
-                                            children: [
-                                              Icon(
-                                                Icons.playlist_add,
-                                                color: Colors.white,
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Add to Chain',
-                                                style: TextStyle(color: Colors.white),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                            ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -515,7 +516,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
     );
 
     return AuthenticatedView(
-      selectedIndex: 0, // Feed is always index 0
+      selectedIndex: 0,
       body: content,
     );
   }
