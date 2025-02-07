@@ -103,6 +103,7 @@ class CloudinaryService {
       
       final optimizedUrl = '${urlParts[0]}/upload/$transformations/${urlParts[1]}';
       print('CloudinaryService: Generated optimized URL: $optimizedUrl');
+
       return optimizedUrl;
     } catch (e) {
       print('CloudinaryService: Error generating optimized URL: $e');

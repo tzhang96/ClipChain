@@ -54,11 +54,11 @@ class App extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
           useMaterial3: true,
         ),
-        home: const AppDataInitializer(
-          child: AuthWrapper(),
-        ),
+        initialRoute: '/',
         routes: {
-          '/': (context) => const AuthWrapper(),
+          '/': (context) => const AppDataInitializer(
+            child: AuthWrapper(),
+          ),
           '/signup': (context) => const SignupScreen(),
           '/profile': (context) {
             final userId = ModalRoute.of(context)?.settings.arguments as String?;

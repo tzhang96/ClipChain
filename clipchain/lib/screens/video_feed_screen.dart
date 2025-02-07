@@ -40,6 +40,7 @@ class VideoFeedScreen extends StatefulWidget {
   final String? title;
   final String? initialVideoId;
   final VoidCallback? onHeaderTap;
+  final Widget Function(BuildContext context, VoidCallback onTap)? headerBuilder;
 
   const VideoFeedScreen({
     super.key,
@@ -48,6 +49,7 @@ class VideoFeedScreen extends StatefulWidget {
     this.title,
     this.initialVideoId,
     this.onHeaderTap,
+    this.headerBuilder,
   });
 
   @override
@@ -468,7 +470,16 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                   top: MediaQuery.of(context).padding.top + 8,
                   left: 16,
                   right: 16,
-                  child: GestureDetector(
+                  child: widget.headerBuilder?.call(context, () {
+                    print('VideoFeedScreen: Header tapped');
+                    if (widget.onHeaderTap != null) {
+                      print('VideoFeedScreen: Calling onHeaderTap handler');
+                      widget.onHeaderTap!();
+                    } else {
+                      print('VideoFeedScreen: No onHeaderTap handler provided');
+                      Navigator.of(context).pop();
+                    }
+                  }) ?? GestureDetector(
                     onTap: () {
                       print('VideoFeedScreen: Header tapped');
                       if (widget.onHeaderTap != null) {

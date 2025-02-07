@@ -36,10 +36,14 @@ class ChainProvider with ChangeNotifier {
 
   // Get a single chain by ID
   ChainDocument? getChainById(String chainId) {
-    return _chains.cast<ChainDocument?>().firstWhere(
+    print('ChainProvider: Getting chain by ID: $chainId');
+    print('ChainProvider: Current chains in cache: ${_chains.map((c) => "${c.id}: ${c.likes}").join(", ")}');
+    final chain = _chains.cast<ChainDocument?>().firstWhere(
       (c) => c?.id == chainId,
       orElse: () => null,
     );
+    print('ChainProvider: Found chain: ${chain?.id}, likes: ${chain?.likes}');
+    return chain;
   }
 
   // Check if a chain is liked by a user
@@ -50,6 +54,18 @@ class ChainProvider with ChangeNotifier {
   // Get all chain IDs liked by a user
   Set<String> getLikedChainIds(String userId) {
     return _userLikedChains[userId] ?? {};
+  }
+
+  // Add a chain to the main cache if it's not already there
+  void addToMainCache(ChainDocument chain) {
+    print('ChainProvider: Adding chain ${chain.id} to main cache');
+    if (!_chains.any((c) => c.id == chain.id)) {
+      _chains = [chain, ..._chains];
+      print('ChainProvider: Chain added to main cache');
+      notifyListeners();
+    } else {
+      print('ChainProvider: Chain already in main cache');
+    }
   }
 
   /// Create a new chain
@@ -311,6 +327,7 @@ class ChainProvider with ChangeNotifier {
   /// Toggle like status for a chain
   Future<void> toggleChainLike(String userId, String chainId) async {
     try {
+      print('ChainProvider: Toggling like for chain $chainId by user $userId');
       // Defer initial state update
       Future.microtask(() {
         _isLoadingLikes = true;
@@ -319,9 +336,11 @@ class ChainProvider with ChangeNotifier {
       });
 
       final isLiked = isChainLiked(userId, chainId);
+      print('ChainProvider: Current like status: $isLiked');
       
       if (isLiked) {
         // Unlike
+        print('ChainProvider: Unliking chain');
         await _firestore
             .collection(FirestorePaths.chainLikes)
             .where('userId', isEqualTo: userId)
@@ -339,39 +358,56 @@ class ChainProvider with ChangeNotifier {
             .doc(chainId)
             .update({'likes': FieldValue.increment(-1)});
 
+        // Fetch updated chain data
+        final updatedDoc = await _firestore
+            .collection(FirestorePaths.chains)
+            .doc(chainId)
+            .get();
+
+        if (!updatedDoc.exists) {
+          throw Exception('Chain not found');
+        }
+
+        final data = updatedDoc.data()!;
+        data['id'] = updatedDoc.id;
+        final updatedChain = ChainDocument.fromMap(data);
+        print('ChainProvider: Fetched updated chain data - likes: ${updatedChain.likes}');
+
         // Schedule state update
         Future.microtask(() {
+          print('ChainProvider: Updating cache with new chain data');
           _userLikedChains[userId]?.remove(chainId);
-          final chain = getChainById(chainId);
-          if (chain != null) {
-            final updatedChain = ChainDocument(
-              id: chain.id,
-              userId: chain.userId,
-              title: chain.title,
-              description: chain.description,
-              likes: chain.likes - 1,
-              videoIds: chain.videoIds,
-              createdAt: chain.createdAt,
-              updatedAt: chain.updatedAt,
-            );
-            final index = _chains.indexWhere((c) => c.id == chainId);
-            if (index != -1) {
-              _chains[index] = updatedChain;
-            }
-            final userChains = _userChains[chain.userId];
-            if (userChains != null) {
-              final userIndex = userChains.indexWhere((c) => c.id == chainId);
-              if (userIndex != -1) {
-                userChains[userIndex] = updatedChain;
-              }
+          
+          // Update in main chains list
+          final index = _chains.indexWhere((c) => c.id == chainId);
+          if (index != -1) {
+            print('ChainProvider: Updating chain in main cache at index $index');
+            print('ChainProvider: Old likes: ${_chains[index].likes}, New likes: ${updatedChain.likes}');
+            _chains[index] = updatedChain;
+          } else {
+            print('ChainProvider: Chain not found in main cache');
+          }
+
+          // Update in user chains list
+          final userChains = _userChains[updatedChain.userId];
+          if (userChains != null) {
+            final userIndex = userChains.indexWhere((c) => c.id == chainId);
+            if (userIndex != -1) {
+              print('ChainProvider: Updating chain in user cache at index $userIndex');
+              userChains[userIndex] = updatedChain;
+            } else {
+              print('ChainProvider: Chain not found in user cache');
             }
           }
+
           _isLoadingLikes = false;
+          print('ChainProvider: Notifying listeners of update');
           notifyListeners();
         });
 
       } else {
         // Like
+        print('ChainProvider: Liking chain');
         await _firestore
             .collection(FirestorePaths.chainLikes)
             .add({
@@ -386,39 +422,56 @@ class ChainProvider with ChangeNotifier {
             .doc(chainId)
             .update({'likes': FieldValue.increment(1)});
 
+        // Fetch updated chain data
+        final updatedDoc = await _firestore
+            .collection(FirestorePaths.chains)
+            .doc(chainId)
+            .get();
+
+        if (!updatedDoc.exists) {
+          throw Exception('Chain not found');
+        }
+
+        final data = updatedDoc.data()!;
+        data['id'] = updatedDoc.id;
+        final updatedChain = ChainDocument.fromMap(data);
+        print('ChainProvider: Fetched updated chain data - likes: ${updatedChain.likes}');
+
         // Schedule state update
         Future.microtask(() {
+          print('ChainProvider: Updating cache with new chain data');
           _userLikedChains.putIfAbsent(userId, () => {}).add(chainId);
-          final chain = getChainById(chainId);
-          if (chain != null) {
-            final updatedChain = ChainDocument(
-              id: chain.id,
-              userId: chain.userId,
-              title: chain.title,
-              description: chain.description,
-              likes: chain.likes + 1,
-              videoIds: chain.videoIds,
-              createdAt: chain.createdAt,
-              updatedAt: chain.updatedAt,
-            );
-            final index = _chains.indexWhere((c) => c.id == chainId);
-            if (index != -1) {
-              _chains[index] = updatedChain;
-            }
-            final userChains = _userChains[chain.userId];
-            if (userChains != null) {
-              final userIndex = userChains.indexWhere((c) => c.id == chainId);
-              if (userIndex != -1) {
-                userChains[userIndex] = updatedChain;
-              }
+          
+          // Update in main chains list
+          final index = _chains.indexWhere((c) => c.id == chainId);
+          if (index != -1) {
+            print('ChainProvider: Updating chain in main cache at index $index');
+            print('ChainProvider: Old likes: ${_chains[index].likes}, New likes: ${updatedChain.likes}');
+            _chains[index] = updatedChain;
+          } else {
+            print('ChainProvider: Chain not found in main cache');
+          }
+
+          // Update in user chains list
+          final userChains = _userChains[updatedChain.userId];
+          if (userChains != null) {
+            final userIndex = userChains.indexWhere((c) => c.id == chainId);
+            if (userIndex != -1) {
+              print('ChainProvider: Updating chain in user cache at index $userIndex');
+              userChains[userIndex] = updatedChain;
+            } else {
+              print('ChainProvider: Chain not found in user cache');
             }
           }
+
           _isLoadingLikes = false;
+          print('ChainProvider: Notifying listeners of update');
           notifyListeners();
         });
       }
 
     } catch (e) {
+      print('ChainProvider: Error toggling like: $e');
       Future.microtask(() {
         _likesError = 'Failed to toggle chain like: $e';
         _isLoadingLikes = false;
