@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'providers/video_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/likes_provider.dart';
+import 'providers/chain_provider.dart';
 
 /// Handles all data initialization for the app
 class AppDataInitializer extends StatefulWidget {
@@ -64,6 +65,7 @@ class _AppDataInitializerState extends State<AppDataInitializer> {
     final videoProvider = context.read<VideoProvider>();
     final authProvider = context.read<AuthProvider>();
     final likesProvider = context.read<LikesProvider>();
+    final chainProvider = context.read<ChainProvider>();
 
     try {
       print('AppDataInitializer: Starting data initialization');
@@ -81,8 +83,13 @@ class _AppDataInitializerState extends State<AppDataInitializer> {
       print('AppDataInitializer: Videos loaded, count: ${videoProvider.videos.length}');
       
       if (mounted && authProvider.isAuthenticated) {
-        await likesProvider.loadUserLikes(authProvider.user!.uid);
-        print('AppDataInitializer: User likes loaded');
+        final userId = authProvider.user!.uid;
+        await Future.wait([
+          likesProvider.loadUserLikes(userId),
+          chainProvider.fetchUserChains(userId),
+          chainProvider.loadUserLikedChains(userId),
+        ]);
+        print('AppDataInitializer: User data loaded');
       }
 
       print('AppDataInitializer: Data initialization complete');

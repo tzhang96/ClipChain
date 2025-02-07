@@ -3,6 +3,7 @@ import '../models/video_model.dart';
 import '../types/firestore_types.dart';
 import '../models/feed_source.dart';
 import 'video_grid.dart';
+import 'chain_grid.dart';
 import '../screens/video_feed_screen.dart';
 import 'authenticated_view.dart';
 import '../screens/profile_screen.dart';
@@ -10,6 +11,7 @@ import '../screens/profile_screen.dart';
 class TabData {
   final String label;
   final List<VideoDocument> videos;
+  final List<ChainDocument>? chains;  // Optional list of chains
   final bool isLoading;
   final String? errorMessage;
   final FeedSource? feedSource;  // Optional source for the feed when tapping videos
@@ -17,6 +19,7 @@ class TabData {
   const TabData({
     required this.label,
     required this.videos,
+    this.chains,
     this.isLoading = false,
     this.errorMessage,
     this.feedSource,
@@ -113,6 +116,11 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
     }
   }
 
+  void _handleChainTap(String chainId) {
+    // TODO: Implement chain tap handler
+    print('Chain tapped: $chainId');
+  }
+
   @override
   Widget build(BuildContext context) {
     return AuthenticatedView(
@@ -154,6 +162,17 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
   }
 
   Widget _buildTabContent(TabData tab) {
+    // If the tab has chains, show the chain grid
+    if (tab.chains != null) {
+      return ChainGrid(
+        chains: tab.chains!,
+        isLoading: tab.isLoading,
+        errorMessage: tab.errorMessage,
+        onChainTap: _handleChainTap,
+      );
+    }
+
+    // Otherwise show the video grid
     return VideoGrid(
       videos: tab.videos,
       isLoading: tab.isLoading,

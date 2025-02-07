@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/video_provider.dart';
 import '../providers/likes_provider.dart';
+import '../providers/chain_provider.dart';
 import '../widgets/video_grid_view.dart';
 import '../types/firestore_types.dart';
 import '../models/feed_source.dart';
@@ -38,11 +39,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final videoProvider = Provider.of<VideoProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final likesProvider = Provider.of<LikesProvider>(context, listen: false);
+    final chainProvider = Provider.of<ChainProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    final isCurrentUser = widget.userId == null || widget.userId == authProvider.user?.uid;
     
     await Future.wait([
       videoProvider.fetchUserVideos(userId),
       userProvider.fetchUser(userId),
       likesProvider.loadUserLikes(userId),
+      chainProvider.fetchUserChains(userId),
+      if (isCurrentUser) chainProvider.loadUserLikedChains(userId),
     ]);
   }
 
@@ -52,10 +59,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userProvider = context.watch<UserProvider>();
     final videoProvider = context.watch<VideoProvider>();
     final likesProvider = context.watch<LikesProvider>();
+    final chainProvider = context.watch<ChainProvider>();
     
     final targetUserId = widget.userId ?? authProvider.user?.uid;
     final isCurrentUser = widget.userId == null || widget.userId == authProvider.user?.uid;
     final userVideos = targetUserId != null ? videoProvider.getVideosByUserId(targetUserId) : <VideoDocument>[];
+    final userChains = targetUserId != null ? chainProvider.getChainsByUserId(targetUserId) : <ChainDocument>[];
     final userData = targetUserId != null ? userProvider.getUser(targetUserId) : null;
 
     if (targetUserId == null) {
@@ -82,6 +91,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         videos: userVideos,
         isLoading: videoProvider.isLoadingUserVideos,
         errorMessage: videoProvider.userVideosError,
+        feedSource: feedSource,
+      ),
+      TabData(
+        label: 'Chains',
+        videos: [], // We'll need to update VideoGridView to support chains
+        chains: userChains,
+        isLoading: chainProvider.isLoadingUserChains,
+        errorMessage: chainProvider.userChainsError,
         feedSource: feedSource,
       ),
       if (isCurrentUser)
@@ -126,7 +143,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   Text(
-                    '${userVideos.length} videos',
+                    '${userVideos.length} videos • ${userChains.length} chains',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],

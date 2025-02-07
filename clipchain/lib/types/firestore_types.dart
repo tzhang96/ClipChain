@@ -156,12 +156,61 @@ class LikeDocument {
   };
 }
 
+/// Represents the structure of a document in the 'chains' collection
+class ChainDocument {
+  final String id;
+  final String userId;
+  final String title;
+  final String? description;
+  final int likes;
+  final List<String> videoIds;
+  final Timestamp createdAt;
+  final Timestamp updatedAt;
+
+  const ChainDocument({
+    required this.id,
+    required this.userId,
+    required this.title,
+    this.description,
+    required this.likes,
+    required this.videoIds,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory ChainDocument.fromMap(Map<String, dynamic> map) {
+    return ChainDocument(
+      id: map['id'] as String,
+      userId: map['userId'] as String,
+      title: map['title'] as String,
+      description: map['description'] as String?,
+      likes: map['likes'] as int,
+      videoIds: List<String>.from(map['videoIds'] as List),
+      createdAt: map['createdAt'] as Timestamp,
+      updatedAt: map['updatedAt'] as Timestamp,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'userId': userId,
+    'title': title,
+    'description': description,
+    'likes': likes,
+    'videoIds': videoIds,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+  };
+}
+
 /// Collection path constants to avoid typos
 class FirestorePaths {
   static const String videos = 'videos';
   static const String users = 'users';
   static const String comments = 'comments';
   static const String likes = 'likes';
+  static const String chains = 'chains';
+  static const String chainLikes = 'chainLikes';
   
   // Private constructor to prevent instantiation
   FirestorePaths._();
@@ -171,4 +220,7 @@ class FirestorePaths {
   
   /// Helper method to get a video's comments subcollection path
   static String videoComments(String videoId) => 'videos/$videoId/comments';
+  
+  /// Helper method to get a user's chains subcollection path
+  static String userChains(String userId) => 'users/$userId/chains';
 } 

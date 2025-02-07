@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/index.dart';
+import 'providers/chain_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
@@ -44,6 +45,7 @@ class App extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => VideoProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => LikesProvider()),
+        ChangeNotifierProvider(create: (_) => ChainProvider()),
       ],
       child: MaterialApp(
         title: 'ClipChain',
