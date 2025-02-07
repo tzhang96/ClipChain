@@ -58,7 +58,6 @@ class App extends StatelessWidget {
           child: AuthWrapper(),
         ),
         routes: {
-          '/': (context) => const AuthWrapper(),
           '/signup': (context) => const SignupScreen(),
           '/profile': (context) {
             final userId = ModalRoute.of(context)?.settings.arguments as String?;
