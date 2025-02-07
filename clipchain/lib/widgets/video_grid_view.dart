@@ -16,6 +16,7 @@ class TabData {
   final bool isLoading;
   final String? errorMessage;
   final FeedSource? feedSource;  // Optional source for the feed when tapping videos
+  final List<SubTabData>? subtabs;  // Optional subtabs for nested navigation
 
   const TabData({
     required this.label,
@@ -24,6 +25,19 @@ class TabData {
     this.isLoading = false,
     this.errorMessage,
     this.feedSource,
+    this.subtabs,
+  });
+}
+
+class SubTabData {
+  final String label;
+  final List<VideoDocument>? videos;
+  final List<ChainDocument>? chains;
+
+  const SubTabData({
+    required this.label,
+    this.videos,
+    this.chains,
   });
 }
 
@@ -51,8 +65,9 @@ class VideoGridView extends StatefulWidget {
   State<VideoGridView> createState() => VideoGridViewState();
 }
 
-class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderStateMixin {
+class VideoGridViewState extends State<VideoGridView> with TickerProviderStateMixin {
   late TabController _tabController;
+  Map<int, TabController> _subTabControllers = {};
 
   @override
   void initState() {
@@ -61,6 +76,20 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
       length: widget.tabs.length,
       vsync: this,
     );
+    _initializeSubTabControllers();
+  }
+
+  void _initializeSubTabControllers() {
+    _subTabControllers = {};
+    for (var i = 0; i < widget.tabs.length; i++) {
+      final tab = widget.tabs[i];
+      if (tab.subtabs != null && tab.subtabs!.isNotEmpty) {
+        _subTabControllers[i] = TabController(
+          length: tab.subtabs!.length,
+          vsync: this,
+        );
+      }
+    }
   }
 
   @override
@@ -72,12 +101,22 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
         length: widget.tabs.length,
         vsync: this,
       );
+      _disposeSubTabControllers();
+      _initializeSubTabControllers();
     }
+  }
+
+  void _disposeSubTabControllers() {
+    for (var controller in _subTabControllers.values) {
+      controller.dispose();
+    }
+    _subTabControllers.clear();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _disposeSubTabControllers();
     super.dispose();
   }
 
@@ -184,6 +223,51 @@ class VideoGridViewState extends State<VideoGridView> with SingleTickerProviderS
   }
 
   Widget _buildTabContent(TabData tab) {
+    if (tab.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (tab.errorMessage != null) {
+      return Center(
+        child: Text(tab.errorMessage!, style: const TextStyle(color: Colors.red)),
+      );
+    }
+
+    // If the tab has subtabs, show them
+    if (tab.subtabs != null && tab.subtabs!.isNotEmpty) {
+      final tabIndex = widget.tabs.indexOf(tab);
+      final subTabController = _subTabControllers[tabIndex];
+      if (subTabController == null) return const SizedBox();
+
+      return Column(
+        children: [
+          TabBar(
+            controller: subTabController,
+            tabs: tab.subtabs!.map((subtab) => Tab(text: subtab.label)).toList(),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: subTabController,
+              children: tab.subtabs!.map((subtab) {
+                if (subtab.chains != null) {
+                  return ChainGrid(
+                    chains: subtab.chains!,
+                    isLoading: false,
+                    onChainTap: (chainId) => _handleChainTap(chainId, tab),
+                  );
+                }
+                return VideoGrid(
+                  videos: subtab.videos ?? [],
+                  isLoading: false,
+                  onVideoTap: (videoId) => _handleVideoTap(videoId, tab),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      );
+    }
+
     // If the tab has chains, show the chain grid
     if (tab.chains != null) {
       return ChainGrid(

@@ -95,7 +95,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       TabData(
         label: 'Chains',
-        videos: [], // We'll need to update VideoGridView to support chains
+        videos: [],
         chains: userChains,
         isLoading: chainProvider.isLoadingUserChains,
         errorMessage: chainProvider.userChainsError,
@@ -104,14 +104,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (isCurrentUser)
         TabData(
           label: 'Liked',
-          videos: likesProvider.getLikedVideoIds(targetUserId)
-              .map((id) => videoProvider.getVideoById(id))
-              .where((video) => video != null)
-              .map((video) => video!)
-              .toList(),
-          isLoading: likesProvider.isLoading,
-          errorMessage: likesProvider.error,
+          videos: [],
+          isLoading: likesProvider.isLoading || chainProvider.isLoadingLikes,
+          errorMessage: likesProvider.error ?? chainProvider.likesError,
           feedSource: feedSource,
+          subtabs: [
+            SubTabData(
+              label: 'Videos',
+              videos: likesProvider.getLikedVideoIds(targetUserId)
+                  .map((id) => videoProvider.getVideoById(id))
+                  .where((video) => video != null)
+                  .map((video) => video!)
+                  .toList(),
+            ),
+            SubTabData(
+              label: 'Chains',
+              chains: chainProvider.getLikedChainIds(targetUserId)
+                  .map((id) => chainProvider.getChainById(id))
+                  .where((chain) => chain != null)
+                  .map((chain) => chain!)
+                  .toList(),
+            ),
+          ],
         ),
     ];
 
