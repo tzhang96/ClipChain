@@ -115,32 +115,29 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> signOut(BuildContext context) async {
     try {
-      // Defer initial state update
-      Future.microtask(() {
-        _isLoading = true;
-        _error = null;
-        notifyListeners();
-      });
+      // Set loading state
+      _isLoading = true;
+      notifyListeners();
 
+      // Clear provider states
+      context.read<VideoProvider>().clear();
+      context.read<LikesProvider>().clear();
+      context.read<ChainProvider>().clear();
+
+      // Navigate first
+      if (context.mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
+
+      // Sign out from Firebase - this will trigger the auth state listener
       await _authService.signOut();
-
-      // Clear all provider states
-      Future.microtask(() {
-        _user = null;
-        _isLoading = false;
-        // Clear any cached data that might cause conflicts
-        context.read<VideoProvider>().clear();
-        context.read<LikesProvider>().clear();
-        context.read<ChainProvider>().clear();
-        notifyListeners();
-      });
+      
+      _isLoading = false;
+      notifyListeners();
     } catch (e) {
-      // Schedule error state update
-      Future.microtask(() {
-        _error = 'Failed to sign out';
-        _isLoading = false;
-        notifyListeners();
-      });
+      _error = 'Failed to sign out';
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
