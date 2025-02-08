@@ -81,6 +81,8 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
+        // Simply return the appropriate screen based on auth state
+        // No navigation needed here as this wrapper will rebuild when auth state changes
         if (authProvider.isAuthenticated) {
           return const HomeScreen();
         } else {

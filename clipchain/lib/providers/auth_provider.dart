@@ -1,8 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import '../types/firestore_types.dart';
+import '../providers/video_provider.dart';
+import '../providers/likes_provider.dart';
+import '../providers/chain_provider.dart';
+import 'package:provider/provider.dart';
 
 class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -108,7 +113,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> signOut() async {
+  Future<void> signOut(BuildContext context) async {
     try {
       // Defer initial state update
       Future.microtask(() {
@@ -119,7 +124,16 @@ class AuthProvider with ChangeNotifier {
 
       await _authService.signOut();
 
-      // Auth state listener will handle the state update
+      // Clear all provider states
+      Future.microtask(() {
+        _user = null;
+        _isLoading = false;
+        // Clear any cached data that might cause conflicts
+        context.read<VideoProvider>().clear();
+        context.read<LikesProvider>().clear();
+        context.read<ChainProvider>().clear();
+        notifyListeners();
+      });
     } catch (e) {
       // Schedule error state update
       Future.microtask(() {

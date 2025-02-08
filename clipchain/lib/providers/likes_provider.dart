@@ -5,7 +5,7 @@ import 'video_provider.dart';
 
 class LikesProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late final VideoProvider _videoProvider;
+  VideoProvider? _videoProvider;
   
   // Cache of liked video IDs for each user
   Map<String, Set<String>> _userLikes = {}; // userId -> Set of videoIds
@@ -18,7 +18,16 @@ class LikesProvider with ChangeNotifier {
   String? get error => _error;
 
   void initialize(VideoProvider videoProvider) {
+    if (_videoProvider != null) return; // Prevent re-initialization
     _videoProvider = videoProvider;
+  }
+
+  /// Clear all cached data
+  void clear() {
+    _userLikes.clear();
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
   }
 
   /// Check if a video is liked by a user
@@ -28,6 +37,7 @@ class LikesProvider with ChangeNotifier {
 
   /// Toggle like status for a video
   Future<void> toggleLike(String userId, String videoId) async {
+    if (_videoProvider == null) return;  // Guard against uninitialized provider
     try {
       // Defer initial state update
       Future.microtask(() {

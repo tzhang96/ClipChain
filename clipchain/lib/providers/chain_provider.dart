@@ -504,4 +504,18 @@ class ChainProvider with ChangeNotifier {
       });
     }
   }
+
+  /// Clear all cached data
+  void clear() {
+    _chains.clear();
+    _userChains.clear();
+    _userLikedChains.clear();
+    _isLoadingChains = false;
+    _isLoadingUserChains = false;
+    _isLoadingLikes = false;
+    _chainsError = null;
+    _userChainsError = null;
+    _likesError = null;
+    notifyListeners();
+  }
 } 

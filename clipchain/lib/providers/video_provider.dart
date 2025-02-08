@@ -36,23 +36,22 @@ class VideoProvider with ChangeNotifier {
   }
 
   /// Update a video in the cache
-  void updateVideoInCache(VideoDocument updatedVideo) {
-    // Update in main videos list
-    final index = _videos.indexWhere((v) => v.id == updatedVideo.id);
+  void updateVideoInCache(VideoDocument video) {
+    final index = _videos.indexWhere((v) => v.id == video.id);
     if (index != -1) {
-      _videos[index] = updatedVideo;
-    }
-
-    // Update in user videos cache
-    final userId = updatedVideo.userId;
-    if (_userVideos.containsKey(userId)) {
-      final userVideoIndex = _userVideos[userId]!.indexWhere((v) => v.id == updatedVideo.id);
-      if (userVideoIndex != -1) {
-        _userVideos[userId]![userVideoIndex] = updatedVideo;
+      _videos[index] = video;
+      
+      // Also update in user videos if present
+      final userVideos = _userVideos[video.userId];
+      if (userVideos != null) {
+        final userIndex = userVideos.indexWhere((v) => v.id == video.id);
+        if (userIndex != -1) {
+          userVideos[userIndex] = video;
+        }
       }
+      
+      notifyListeners();
     }
-
-    notifyListeners();
   }
 
   /// Fetch all videos (for feed)
@@ -195,5 +194,16 @@ class VideoProvider with ChangeNotifier {
       });
       return null;
     }
+  }
+
+  /// Clear all cached data
+  void clear() {
+    _videos.clear();
+    _userVideos.clear();
+    _isLoadingFeed = false;
+    _isLoadingUserVideos = false;
+    _feedError = null;
+    _userVideosError = null;
+    notifyListeners();
   }
 } 

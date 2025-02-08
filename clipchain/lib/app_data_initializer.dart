@@ -26,6 +26,11 @@ class _AppDataInitializerState extends State<AppDataInitializer> {
   @override
   void initState() {
     super.initState();
+    // Initialize LikesProvider with VideoProvider
+    final videoProvider = context.read<VideoProvider>();
+    final likesProvider = context.read<LikesProvider>();
+    likesProvider.initialize(videoProvider);
+    
     // Schedule the first check
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAuthState();
