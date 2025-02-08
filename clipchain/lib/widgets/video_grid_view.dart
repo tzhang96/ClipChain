@@ -253,13 +253,51 @@ class VideoGridViewState extends State<VideoGridView> with TickerProviderStateMi
                   return ChainGrid(
                     chains: subtab.chains!,
                     isLoading: false,
-                    onChainTap: (chainId) => _handleChainTap(chainId, tab),
+                    onChainTap: (chainId) {
+                      final chain = subtab.chains!.firstWhere((c) => c.id == chainId);
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => ChainFeedScreen(
+                            chain: chain,
+                            initialVideoIndex: 0,
+                          ),
+                        ),
+                        (route) => false,
+                      );
+                    },
                   );
                 }
                 return VideoGrid(
                   videos: subtab.videos ?? [],
                   isLoading: false,
-                  onVideoTap: (videoId) => _handleVideoTap(videoId, tab),
+                  onVideoTap: (videoId) {
+                    final videos = subtab.videos ?? [];
+                    final index = videos.indexWhere((v) => v.id == videoId);
+                    if (index != -1) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => VideoFeedScreen(
+                            customVideos: videos,
+                            initialIndex: index,
+                            title: tab.feedSource?.title ?? widget.title,
+                            onHeaderTap: () {
+                              if (tab.feedSource != null) {
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(
+                                    builder: (context) => tab.feedSource!.buildReturnScreen(),
+                                  ),
+                                  (route) => false,
+                                );
+                              } else {
+                                Navigator.of(context).pop();
+                              }
+                            },
+                          ),
+                        ),
+                        (route) => false,
+                      );
+                    }
+                  },
                 );
               }).toList(),
             ),

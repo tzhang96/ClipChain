@@ -308,9 +308,34 @@ class ChainProvider with ChangeNotifier {
           .map((doc) => doc.get('chainId') as String)
           .toSet();
 
+      // Fetch the actual chain data for all liked chains
+      final chainDocs = await Future.wait(
+        likedChainIds.map((chainId) => 
+          _firestore.collection(FirestorePaths.chains).doc(chainId).get()
+        )
+      );
+
+      final likedChains = chainDocs
+          .where((doc) => doc.exists)
+          .map((doc) {
+            final data = doc.data()!;
+            data['id'] = doc.id;
+            return ChainDocument.fromMap(data);
+          })
+          .toList();
+
       // Schedule state update after async complete
       Future.microtask(() {
         _userLikedChains[userId] = likedChainIds;
+        // Add liked chains to the main cache
+        for (final chain in likedChains) {
+          final index = _chains.indexWhere((c) => c.id == chain.id);
+          if (index != -1) {
+            _chains[index] = chain;
+          } else {
+            _chains.add(chain);
+          }
+        }
         _isLoadingLikes = false;
         notifyListeners();
       });
