@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../providers/video_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/cloudinary_service.dart';
 
 class UploadVideoScreen extends StatefulWidget {
@@ -15,7 +18,8 @@ class UploadVideoScreen extends StatefulWidget {
 class _UploadVideoScreenState extends State<UploadVideoScreen> {
   final CloudinaryService _cloudinaryService = CloudinaryService();
   final TextEditingController _descriptionController = TextEditingController();
-  File? _videoFile;
+  dynamic _videoFile;
+  String? _videoFileName;
   bool _isUploading = false;
   double _uploadProgress = 0.0;
 
@@ -24,9 +28,22 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
     final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
     
     if (video != null) {
-      setState(() {
-        _videoFile = File(video.path);
-      });
+      if (kIsWeb) {
+        // For web, read the file as bytes
+        final bytes = await video.readAsBytes();
+        if (mounted) {
+          setState(() {
+            _videoFile = bytes;
+            _videoFileName = video.name;
+          });
+        }
+      } else {
+        // For mobile, use File
+        setState(() {
+          _videoFile = File(video.path);
+          _videoFileName = video.name;
+        });
+      }
     }
   }
 
@@ -46,7 +63,7 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
     try {
       // Upload to Cloudinary
       final urls = await _cloudinaryService.uploadVideo(
-        _videoFile!,
+        _videoFile,
         onProgress: (progress) {
           setState(() {
             _uploadProgress = progress;
@@ -54,25 +71,24 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
         },
       );
 
-      // Save to Firestore
-      final user = FirebaseAuth.instance.currentUser;
+      // Get the current user
+      final user = context.read<AuthProvider>().user;
       if (user == null) throw Exception('User not authenticated');
 
-      final docRef = await FirebaseFirestore.instance.collection('videos').add({
-        'userId': user.uid,
-        'videoUrl': urls.videoUrl,
-        'thumbnailUrl': urls.thumbnailUrl,
-        'description': _descriptionController.text,
-        'likes': 0,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // Use VideoProvider to handle the upload
+      final videoId = await context.read<VideoProvider>().uploadVideo(
+        userId: user.uid,
+        videoUrl: urls.videoUrl,
+        thumbnailUrl: urls.thumbnailUrl,
+        description: _descriptionController.text,
+      );
 
-      if (mounted) {
+      if (mounted && videoId != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Video uploaded successfully!')),
         );
         // Return the new video ID to the previous screen
-        Navigator.pop(context, docRef.id);
+        Navigator.pop(context, videoId);
       }
     } catch (e) {
       print('Error uploading video: $e');
@@ -113,9 +129,9 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
               label: const Text('Select Video'),
             ),
             const SizedBox(height: 16),
-            if (_videoFile != null)
+            if (_videoFileName != null)
               Text(
-                'Selected video: ${_videoFile!.path.split('/').last}',
+                'Selected video: $_videoFileName',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             const SizedBox(height: 16),

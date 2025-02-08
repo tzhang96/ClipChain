@@ -67,6 +67,19 @@ class LikesProvider with ChangeNotifier {
             .doc(videoId)
             .update({'likes': FieldValue.increment(-1)});
 
+        // Fetch updated video document
+        final updatedDoc = await _firestore
+            .collection(FirestorePaths.videos)
+            .doc(videoId)
+            .get();
+
+        if (updatedDoc.exists) {
+          final data = updatedDoc.data()!;
+          data['id'] = updatedDoc.id;
+          final updatedVideo = VideoDocument.fromMap(data);
+          _videoProvider?.updateVideoInCache(updatedVideo);
+        }
+
         // Schedule state update
         Future.microtask(() {
           _userLikes[userId]?.remove(videoId);
@@ -89,6 +102,19 @@ class LikesProvider with ChangeNotifier {
             .collection(FirestorePaths.videos)
             .doc(videoId)
             .update({'likes': FieldValue.increment(1)});
+
+        // Fetch updated video document
+        final updatedDoc = await _firestore
+            .collection(FirestorePaths.videos)
+            .doc(videoId)
+            .get();
+
+        if (updatedDoc.exists) {
+          final data = updatedDoc.data()!;
+          data['id'] = updatedDoc.id;
+          final updatedVideo = VideoDocument.fromMap(data);
+          _videoProvider?.updateVideoInCache(updatedVideo);
+        }
 
         // Schedule state update
         Future.microtask(() {

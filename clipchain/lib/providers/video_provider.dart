@@ -134,10 +134,12 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
+  /// Upload a new video
   Future<String?> uploadVideo({
-    required String filePath,
-    required String description,
     required String userId,
+    required String videoUrl,
+    required String thumbnailUrl,
+    required String description,
   }) async {
     try {
       // Defer initial state update
@@ -149,15 +151,12 @@ class VideoProvider with ChangeNotifier {
         notifyListeners();
       });
 
-      // Upload to Cloudinary
-      final urls = await _cloudinaryService.uploadVideo(File(filePath));
-      
       // Create video document
       final videoDoc = VideoDocument(
         id: '', // Will be set by Firestore
         userId: userId,
-        videoUrl: urls.videoUrl,
-        thumbnailUrl: urls.thumbnailUrl,
+        videoUrl: videoUrl,
+        thumbnailUrl: thumbnailUrl,
         description: description,
         likes: 0,
         createdAt: Timestamp.now(),
@@ -168,21 +167,27 @@ class VideoProvider with ChangeNotifier {
           .collection(FirestorePaths.videos)
           .add(videoDoc.toMap());
 
-      // Refresh both global and user-specific videos
-      await Future.wait([
-        fetchVideos(),
-        fetchUserVideos(userId),
-      ]);
+      // Create the complete video document with the ID
+      final newVideo = VideoDocument(
+        id: docRef.id,
+        userId: userId,
+        videoUrl: videoUrl,
+        thumbnailUrl: thumbnailUrl,
+        description: description,
+        likes: 0,
+        createdAt: Timestamp.now(),
+      );
 
-      // Schedule success state update
+      // Update local caches
       Future.microtask(() {
+        _videos.insert(0, newVideo);
+        _userVideos[userId] = [newVideo, ...(_userVideos[userId] ?? [])];
         _isLoadingFeed = false;
         _isLoadingUserVideos = false;
         notifyListeners();
       });
 
       return docRef.id;
-
     } catch (e) {
       // Schedule error state update
       Future.microtask(() {

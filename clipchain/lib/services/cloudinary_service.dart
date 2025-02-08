@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloudinary_sdk/cloudinary_sdk.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../config/cloudinary_config.dart';
 
@@ -9,16 +11,16 @@ class CloudinaryService {
   CloudinaryService() : _cloudinary = CloudinaryConfig.instance;
 
   /// Uploads a video file to Cloudinary and returns both video and thumbnail URLs
-  Future<({String videoUrl, String thumbnailUrl})> uploadVideo(File videoFile, {
+  Future<({String videoUrl, String thumbnailUrl})> uploadVideo(dynamic videoFile, {
     void Function(double progress)? onProgress,
   }) async {
     try {
       print('CloudinaryService: Starting video upload...');
-      print('CloudinaryService: File path: ${videoFile.path}');
       
       // Create upload resource with explicit authentication
       final resource = CloudinaryUploadResource(
-        filePath: videoFile.path,
+        filePath: kIsWeb ? null : (videoFile as File).path,
+        fileBytes: kIsWeb ? videoFile as Uint8List : null,
         resourceType: CloudinaryResourceType.video,
         folder: 'videos',
         fileName: 'video_${DateTime.now().millisecondsSinceEpoch}',
