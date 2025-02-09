@@ -1,6 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:media_kit/media_kit.dart';
 import 'firebase_options.dart';
 import 'providers/index.dart';
 import 'providers/chain_provider.dart';
@@ -10,9 +12,17 @@ import 'screens/signup_screen.dart';
 import 'screens/profile_screen.dart';
 import 'config/cloudinary_config.dart';
 import 'app_data_initializer.dart';
+import 'providers/video_player_provider.dart';
+import 'services/media_kit_player_impl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize MediaKit
+  MediaKit.ensureInitialized();
+  
+  // Load environment variables
+  await dotenv.load();
   
   try {
     print('Initializing app...');
@@ -47,6 +57,11 @@ class App extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => LikesProvider()),
         ChangeNotifierProvider(create: (_) => ChainProvider()),
+        ChangeNotifierProvider(
+          create: (_) => VideoPlayerProvider(
+            factory: MediaKitVideoPlayerFactory(),
+          ),
+        ),
       ],
       child: MaterialApp(
         title: 'ClipChain',

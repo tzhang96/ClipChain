@@ -1,38 +1,21 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
 import '../providers/video_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/likes_provider.dart';
+import '../providers/video_player_provider.dart';
 import '../models/video_model.dart';
 import '../services/cloudinary_service.dart';
 import '../types/firestore_types.dart';
+import '../widgets/video_player_widget.dart';
 import 'profile_screen.dart';
 import '../widgets/video_grid_view.dart';
 import 'home_screen.dart';
 import '../widgets/authenticated_view.dart';
 import '../widgets/add_to_chain_sheet.dart';
 import 'create_chain_screen.dart';
-
-/// Represents the current video state
-class CurrentVideoState {
-  final int index;
-  final String id;
-  final VideoPlayerController controller;
-
-  const CurrentVideoState({
-    required this.index,
-    required this.id,
-    required this.controller,
-  });
-
-  void dispose() {
-    controller.dispose();
-  }
-}
 
 class VideoFeedScreen extends StatefulWidget {
   final List<VideoDocument>? customVideos;
@@ -61,11 +44,6 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
 
   final PageController _pageController = PageController();
   final CloudinaryService _cloudinaryService = CloudinaryService();
-  bool _isInitializing = false;
-
-  CurrentVideoState? _currentVideo;
-  bool _isVideoInitializing = false;
-  String? _loadingError;
   bool _isNavigating = false;
   Timer? _navigationTimer;
 
@@ -110,88 +88,24 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
   void dispose() {
     print('VideoFeedScreen: dispose called');
     _navigationTimer?.cancel();
-    _cleanupCurrentVideo();
     _pageController.dispose();
     super.dispose();
   }
 
-  Future<void> _cleanupCurrentVideo() async {
-    final current = _currentVideo;
-    if (current != null) {
-      print('VideoFeedScreen: Cleaning up video at index ${current.index}');
-      await current.controller.pause();
-      current.dispose();
-      if (mounted) {
-        setState(() => _currentVideo = null);
-      }
-    }
-  }
-
   Future<void> _initializeVideo(int index) async {
-    if (_isInitializing) {
-      print('VideoFeedScreen: Video initialization already in progress');
+    if (!mounted) return;
+
+    if (index < 0 || index >= _videos.length) {
+      print('VideoFeedScreen: Invalid video index: $index');
       return;
     }
-    _isInitializing = true;
 
-    try {
-      if (_isVideoInitializing) {
-        print('VideoFeedScreen: Skipping video initialization - already initializing');
-        return;
-      }
+    final video = _videos[index];
+    String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
+    print('VideoFeedScreen: Optimized URL: $videoUrl');
 
-      if (index < 0 || index >= _videos.length) {
-        print('VideoFeedScreen: Invalid video index: $index');
-        return;
-      }
-
-      print('VideoFeedScreen: Starting video initialization for index $index');
-      setState(() => _isVideoInitializing = true);
-
-      await _cleanupCurrentVideo();
-
-      final video = _videos[index];
-      String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
-      print('VideoFeedScreen: Optimized URL: $videoUrl');
-
-      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-      await controller.initialize();
-      controller.setLooping(true);
-      
-      if (mounted) {
-        setState(() {
-          _currentVideo = CurrentVideoState(
-            index: index,
-            id: video.id,
-            controller: controller,
-          );
-          _isVideoInitializing = false;
-        });
-        
-        // Only play if this is still the current page
-        if (_currentVideo?.index == index) {
-          print('VideoFeedScreen: Playing video at index $index');
-          controller.play();
-        }
-      }
-    } catch (e) {
-      print('VideoFeedScreen: Error initializing video: $e');
-      if (mounted) {
-        setState(() {
-          _isVideoInitializing = false;
-          _loadingError = _getErrorMessage(e);
-        });
-      }
-    } finally {
-      _isInitializing = false;
-    }
-  }
-
-  String _getErrorMessage(dynamic error) {
-    if (error is PlatformException) {
-      return 'Video playback error: ${error.message}';
-    }
-    return 'Error: ${error.toString()}';
+    // Initialize video in provider
+    await context.read<VideoPlayerProvider>().initializeVideo(video.id, videoUrl);
   }
 
   void _onPageChanged(int index) async {
@@ -302,221 +216,187 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                 itemBuilder: (context, index) {
                   final video = _videos[index];
                   
-                  return GestureDetector(
-                    onTap: () {
-                      if (_currentVideo?.controller.value.isPlaying ?? false) {
-                        _currentVideo?.controller.pause();
-                      } else {
-                        _currentVideo?.controller.play();
-                      }
-                    },
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (_currentVideo?.controller != null &&
-                            _currentVideo?.index == index &&
-                            _currentVideo!.controller.value.isInitialized)
-                          VideoPlayer(_currentVideo!.controller)
-                        else
-                          const Center(child: CircularProgressIndicator()),
-                        
-                        // Video Info Overlay
-                        Positioned(
-                          bottom: 80,
-                          left: 16,
-                          right: 16,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // User Info Row
-                              Consumer<UserProvider>(
-                                builder: (context, userProvider, child) {
-                                  final user = userProvider.getUser(video.userId);
-                                  
-                                  // Fetch user data if not available
-                                  if (user == null && !userProvider.isLoading(video.userId)) {
-                                    // Schedule the fetch after the current build
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (mounted) {
-                                        userProvider.fetchUser(video.userId);
-                                      }
-                                    });
-                                  }
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const VideoPlayerWidget(),
+                      
+                      // Video Info Overlay
+                      Positioned(
+                        bottom: 80,
+                        left: 16,
+                        right: 16,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // User Info Row
+                            Consumer<UserProvider>(
+                              builder: (context, userProvider, child) {
+                                final user = userProvider.getUser(video.userId);
+                                
+                                // Fetch user data if not available
+                                if (user == null && !userProvider.isLoading(video.userId)) {
+                                  // Schedule the fetch after the current build
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      userProvider.fetchUser(video.userId);
+                                    }
+                                  });
+                                }
 
-                                  return GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(context).pushAndRemoveUntil(
-                                        MaterialPageRoute(
-                                          builder: (context) => ProfileScreen(userId: video.userId),
-                                        ),
-                                        (route) => false,
-                                      );
-                                    },
-                                    child: Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 20,
-                                          backgroundImage: user?.photoUrl != null
-                                              ? NetworkImage(user!.photoUrl!)
-                                              : null,
-                                          child: user?.photoUrl == null
-                                              ? const Icon(Icons.person)
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          user?.username ?? 'Loading...',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
+                                return Row(
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () {
+                                        Navigator.of(context).pushAndRemoveUntil(
+                                          MaterialPageRoute(
+                                            builder: (context) => ProfileScreen(userId: video.userId),
                                           ),
-                                        ),
-                                      ],
+                                          (route) => false,
+                                        );
+                                      },
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 16,
+                                            backgroundColor: Colors.grey[300],
+                                            child: Text(
+                                              user?.username.substring(0, 1).toUpperCase() ?? '?',
+                                              style: const TextStyle(
+                                                color: Colors.black87,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            user?.username ?? 'Loading...',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  );
-                                },
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              video.description,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                video.description,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Consumer2<AuthProvider, LikesProvider>(
-                                builder: (context, authProvider, likesProvider, child) {
-                                  final userId = authProvider.user?.uid;
-                                  final isLiked = userId != null && 
-                                      likesProvider.isVideoLiked(userId, video.id);
+                            ),
+                            const SizedBox(height: 8),
+                            Consumer2<AuthProvider, LikesProvider>(
+                              builder: (context, authProvider, likesProvider, child) {
+                                final userId = authProvider.user?.uid;
+                                final isLiked = userId != null && 
+                                    likesProvider.isVideoLiked(userId, video.id);
 
-                                  return Row(
-                                    children: [
-                                      GestureDetector(
-                                        onTap: userId == null ? null : () {
-                                          likesProvider.toggleLike(userId, video.id);
+                                return Row(
+                                  children: [
+                                    // Like Button
+                                    IconButton(
+                                      icon: Icon(
+                                        isLiked ? Icons.favorite : Icons.favorite_border,
+                                        color: isLiked ? Colors.red : Colors.white,
+                                      ),
+                                      onPressed: userId == null
+                                          ? null
+                                          : () => likesProvider.toggleLike(userId, video.id),
+                                    ),
+                                    Text(
+                                      '${video.likes}',
+                                      style: const TextStyle(color: Colors.white),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    // Add to Chain Button
+                                    if (userId != null && userId != video.userId)
+                                      IconButton(
+                                        icon: const Icon(Icons.playlist_add, color: Colors.white),
+                                        onPressed: () {
+                                          showModalBottomSheet(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            builder: (context) => Padding(
+                                              padding: EdgeInsets.only(
+                                                bottom: MediaQuery.of(context).viewInsets.bottom,
+                                              ),
+                                              child: AddToChainSheet(
+                                                videoId: video.id,
+                                                userId: userId,
+                                              ),
+                                            ),
+                                          );
                                         },
-                                        child: Icon(
-                                          isLiked ? Icons.favorite : Icons.favorite_border,
-                                          color: isLiked ? Colors.red : Colors.white,
-                                        ),
                                       ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${video.likes}',
-                                        style: const TextStyle(color: Colors.white),
+                                    // Create Chain Button
+                                    if (userId != null && userId == video.userId)
+                                      IconButton(
+                                        icon: const Icon(Icons.playlist_add, color: Colors.white),
+                                        onPressed: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => CreateChainScreen(
+                                                initialVideoId: video.id,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
-                                      const SizedBox(width: 16),
-                                      // Add to Chain button
-                                      if (userId != null) // Only show if user is logged in
-                                        GestureDetector(
-                                          onTap: () async {
-                                            final result = await showModalBottomSheet<bool>(
-                                              context: context,
-                                              isScrollControlled: true,
-                                              backgroundColor: Colors.white,
-                                              shape: const RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.vertical(
-                                                  top: Radius.circular(16),
-                                                ),
-                                              ),
-                                              builder: (context) => SizedBox(
-                                                height: MediaQuery.of(context).size.height * 0.7,
-                                                child: AddToChainSheet(
-                                                  videoId: video.id,
-                                                  userId: userId,
-                                                ),
-                                              ),
-                                            );
-
-                                            if (result == true && mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text('Added to chain successfully'),
-                                                ),
-                                              );
-                                            }
-                                          },
-                                          child: const Row(
-                                            children: [
-                                              Icon(
-                                                Icons.playlist_add,
-                                                color: Colors.white,
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Add to Chain',
-                                                style: TextStyle(color: Colors.white),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   );
                 },
               ),
+
+              // Header (if provided)
               if (widget.title != null)
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 8,
+                  top: MediaQuery.of(context).padding.top + 16,
                   left: 16,
                   right: 16,
-                  child: widget.headerBuilder?.call(context, () {
-                    print('VideoFeedScreen: Header tapped');
-                    if (widget.onHeaderTap != null) {
-                      print('VideoFeedScreen: Calling onHeaderTap handler');
-                      widget.onHeaderTap!();
-                    } else {
-                      print('VideoFeedScreen: No onHeaderTap handler provided');
-                      Navigator.of(context).pop();
-                    }
-                  }) ?? GestureDetector(
-                    onTap: () {
-                      print('VideoFeedScreen: Header tapped');
-                      if (widget.onHeaderTap != null) {
-                        print('VideoFeedScreen: Calling onHeaderTap handler');
-                        widget.onHeaderTap!();
-                      } else {
-                        print('VideoFeedScreen: No onHeaderTap handler provided');
-                        Navigator.of(context).pop();
-                      }
-                    },
+                  child: GestureDetector(
+                    onTap: widget.onHeaderTap,
                     behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.title!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                    child: widget.headerBuilder?.call(context, widget.onHeaderTap ?? () {}) ??
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.title!,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ),
-                          const Icon(
-                            Icons.grid_view,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ],
+                            const Icon(
+                              Icons.grid_view,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ),
                 ),
             ],

@@ -1,6 +1,6 @@
 buildscript {
+    ext.kotlin_version = '1.9.0'
     ext {
-        kotlin_version = '1.9.22'
         agp_version = '8.2.1'
         java_version = JavaVersion.VERSION_17
     }
@@ -12,7 +12,6 @@ buildscript {
     dependencies {
         classpath "com.android.tools.build:gradle:$agp_version"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        // Add the google-services plugin
         classpath 'com.google.gms:google-services:4.4.0'
     }
 }
@@ -28,22 +27,6 @@ rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
     project.evaluationDependsOn(':app')
-
-    project.plugins.withType(JavaPlugin) {
-        java {
-            sourceCompatibility = java_version
-            targetCompatibility = java_version
-        }
-    }
-
-    project.plugins.withType(com.android.build.gradle.BasePlugin) {
-        android {
-            compileOptions {
-                sourceCompatibility java_version
-                targetCompatibility java_version
-            }
-        }
-    }
 }
 
 tasks.register("clean", Delete) {
