@@ -50,6 +50,8 @@ dependencies:
 
   # Cloudinary
   cloudinary_sdk: ^4.0.2
+  cloudinary_flutter: ^1.0.0
+  cloudinary_url_gen: ^1.0.0
   flutter_dotenv: ^5.1.0
 
   # Media Picker

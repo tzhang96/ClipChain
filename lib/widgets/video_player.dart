@@ -1,4 +1,7 @@
 import 'package:cloudinary_sdk/cloudinary_sdk.dart';
+import 'package:cloudinary_url_gen/cloudinary.dart';
+import 'package:cloudinary_url_gen/cloudinary_object.dart';
+import 'package:cloudinary_flutter/video/cld_video_controller.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
@@ -24,7 +27,7 @@ class _CloudinaryVideoPlayerState extends State<CloudinaryVideoPlayer> {
 
   Future<void> _initializeVideoPlayer() async {
     // Initialize with your cloud name if not using environment variables
-    final cloudinary = Cloudinary.fromCloudName(cloudName: dotenv.env['CLOUDINARY_CLOUD_NAME']!);
+    final cloudinary = CloudinaryObject.fromCloudName(cloudName: dotenv.env['CLOUDINARY_CLOUD_NAME']!);
     
 
     _controller = CldVideoController(

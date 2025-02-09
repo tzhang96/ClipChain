@@ -16,6 +16,7 @@ import '../widgets/authenticated_view.dart';
 import '../widgets/add_to_chain_sheet.dart';
 import 'create_chain_screen.dart';
 import '../widgets/video_player.dart';
+import 'package:cloudinary_flutter/video/cld_video_controller.dart';
 
 /// Represents the current video state
 class CurrentVideoState {
