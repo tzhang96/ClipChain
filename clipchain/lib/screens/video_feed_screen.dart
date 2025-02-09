@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
 import '../providers/video_provider.dart';
 import '../providers/user_provider.dart';
@@ -16,22 +15,21 @@ import 'home_screen.dart';
 import '../widgets/authenticated_view.dart';
 import '../widgets/add_to_chain_sheet.dart';
 import 'create_chain_screen.dart';
+import '../widgets/video_player.dart';
 
 /// Represents the current video state
 class CurrentVideoState {
   final int index;
   final String id;
-  final VideoPlayerController controller;
+  final String publicId;
+  final bool isInitialized;
 
   const CurrentVideoState({
     required this.index,
     required this.id,
-    required this.controller,
+    required this.publicId,
+    this.isInitialized = false,
   });
-
-  void dispose() {
-    controller.dispose();
-  }
 }
 
 class VideoFeedScreen extends StatefulWidget {
@@ -110,21 +108,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
   void dispose() {
     print('VideoFeedScreen: dispose called');
     _navigationTimer?.cancel();
-    _cleanupCurrentVideo();
-    _pageController.dispose();
     super.dispose();
-  }
-
-  Future<void> _cleanupCurrentVideo() async {
-    final current = _currentVideo;
-    if (current != null) {
-      print('VideoFeedScreen: Cleaning up video at index ${current.index}');
-      await current.controller.pause();
-      current.dispose();
-      if (mounted) {
-        setState(() => _currentVideo = null);
-      }
-    }
   }
 
   Future<void> _initializeVideo(int index) async {
@@ -148,31 +132,26 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
       print('VideoFeedScreen: Starting video initialization for index $index');
       setState(() => _isVideoInitializing = true);
 
-      await _cleanupCurrentVideo();
-
       final video = _videos[index];
-      String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
-      print('VideoFeedScreen: Optimized URL: $videoUrl');
-
-      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-      await controller.initialize();
-      controller.setLooping(true);
+      String videoUrl = video.videoUrl;
+      
+      // Extract public ID using regex
+      final regex = RegExp(r'v\d+/(.+?)\.');
+      final match = regex.firstMatch(videoUrl);
+      if (match == null || match.group(1) == null) {
+        throw Exception('Invalid video URL format');
+      }
+      final publicId = match.group(1)!;
       
       if (mounted) {
         setState(() {
           _currentVideo = CurrentVideoState(
             index: index,
             id: video.id,
-            controller: controller,
+            publicId: publicId,
           );
           _isVideoInitializing = false;
         });
-        
-        // Only play if this is still the current page
-        if (_currentVideo?.index == index) {
-          print('VideoFeedScreen: Playing video at index $index');
-          controller.play();
-        }
       }
     } catch (e) {
       print('VideoFeedScreen: Error initializing video: $e');
@@ -238,65 +217,15 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print('VideoFeedScreen: Building with title: ${widget.title}');
-    print('VideoFeedScreen: Has header tap handler: ${widget.onHeaderTap != null}');
-    
-    final content = Scaffold(
+    return Scaffold(
       backgroundColor: Colors.black,
       body: Consumer<VideoProvider>(
         builder: (context, videoProvider, child) {
-          print('VideoFeedScreen: Building content');
-          
-          if (videoProvider.isLoadingFeed) {
-            print('VideoFeedScreen: Showing loading state');
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Loading videos...', style: TextStyle(color: Colors.white)),
-                ],
-              ),
-            );
-          }
-
-          if (videoProvider.feedError != null) {
-            print('VideoFeedScreen: Showing error state: ${videoProvider.feedError}');
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(videoProvider.feedError!, style: TextStyle(color: Colors.white)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => videoProvider.fetchVideos(),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (videoProvider.videos.isEmpty) {
-            print('VideoFeedScreen: Showing empty state');
-            return const Center(
-              child: Text('No videos available', style: TextStyle(color: Colors.white)),
-            );
-          }
-
-          print('VideoFeedScreen: Building video feed with ${videoProvider.videos.length} videos');
-          if (widget.title != null) {
-            print('VideoFeedScreen: Adding header with title: ${widget.title}');
-          }
-          
           return Stack(
             children: [
               PageView.builder(
-                scrollDirection: Axis.vertical,
                 controller: _pageController,
+                scrollDirection: Axis.vertical,
                 onPageChanged: _onPageChanged,
                 itemCount: _videos.length,
                 itemBuilder: (context, index) {
@@ -304,19 +233,15 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                   
                   return GestureDetector(
                     onTap: () {
-                      if (_currentVideo?.controller.value.isPlaying ?? false) {
-                        _currentVideo?.controller.pause();
-                      } else {
-                        _currentVideo?.controller.play();
-                      }
+                      // Video play/pause is now handled by the CloudinaryVideoPlayer
                     },
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        if (_currentVideo?.controller != null &&
-                            _currentVideo?.index == index &&
-                            _currentVideo!.controller.value.isInitialized)
-                          VideoPlayer(_currentVideo!.controller)
+                        if (_currentVideo?.index == index)
+                          CloudinaryVideoPlayer(
+                            publicId: _currentVideo!.publicId,
+                          )
                         else
                           const Center(child: CircularProgressIndicator()),
                         
@@ -523,11 +448,6 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
           );
         },
       ),
-    );
-
-    return AuthenticatedView(
-      selectedIndex: 0, // Feed is always index 0
-      body: content,
     );
   }
 } 
