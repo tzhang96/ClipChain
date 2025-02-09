@@ -49,7 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       userProvider.fetchUser(userId),
       likesProvider.loadUserLikes(userId),
       chainProvider.fetchUserChains(userId),
-      if (isCurrentUser) chainProvider.loadUserLikedChains(userId),
+      if (isCurrentUser) chainProvider.loadUserLikes(userId),
     ]);
   }
 
@@ -105,13 +105,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         TabData(
           label: 'Liked',
           videos: [],
-          isLoading: likesProvider.isLoading || chainProvider.isLoadingLikes,
-          errorMessage: likesProvider.error ?? chainProvider.likesError,
+          isLoading: likesProvider.isLoadingLikes || chainProvider.isLoadingLikes,
+          errorMessage: likesProvider.likesError ?? chainProvider.likesError,
           feedSource: feedSource,
           subtabs: [
             SubTabData(
               label: 'Videos',
-              videos: likesProvider.getLikedVideoIds(targetUserId)
+              videos: likesProvider.getLikedItemIds(targetUserId)
                   .map((id) => videoProvider.getVideoById(id))
                   .where((video) => video != null)
                   .map((video) => video!)
@@ -119,7 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             SubTabData(
               label: 'Chains',
-              chains: chainProvider.getLikedChainIds(targetUserId)
+              chains: chainProvider.getLikedItemIds(targetUserId)
                   .map((id) => chainProvider.getChainById(id))
                   .where((chain) => chain != null)
                   .map((chain) => chain!)

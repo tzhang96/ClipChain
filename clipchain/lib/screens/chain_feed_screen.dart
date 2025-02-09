@@ -50,7 +50,7 @@ class ChainFeedScreen extends StatelessWidget {
               builder: (context, authProvider, chainProvider, _) {
                 final userId = authProvider.user?.uid;
                 final isLiked = userId != null && 
-                    chainProvider.isChainLiked(userId, chain.id);
+                    chainProvider.isItemLiked(userId, chain.id);
                 final liveChain = chainProvider.getChainById(chain.id) ?? chain;
                 print('ChainFeedScreen: Rebuilding like button with chain ${liveChain.id}, likes: ${liveChain.likes}, isLiked: $isLiked');
 
@@ -60,7 +60,7 @@ class ChainFeedScreen extends StatelessWidget {
                       onTap: () {
                         if (userId != null) {
                           print('ChainFeedScreen: Like button tapped for chain ${chain.id}');
-                          chainProvider.toggleChainLike(userId, chain.id);
+                          chainProvider.toggleLike(userId, chain.id);
                         }
                       },
                       child: Icon(

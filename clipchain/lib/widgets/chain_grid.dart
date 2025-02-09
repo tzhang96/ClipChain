@@ -133,7 +133,7 @@ class ChainGrid extends StatelessWidget {
                               builder: (context, authProvider, chainProvider, _) {
                                 final userId = authProvider.user?.uid;
                                 final isLiked = userId != null && 
-                                    chainProvider.isChainLiked(userId, chain.id);
+                                    chainProvider.isItemLiked(userId, chain.id);
 
                                 return Row(
                                   children: [

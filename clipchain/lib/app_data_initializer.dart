@@ -89,10 +89,10 @@ class _AppDataInitializerState extends State<AppDataInitializer> {
       
       if (mounted && authProvider.isAuthenticated) {
         final userId = authProvider.user!.uid;
-        await Future.wait([
+        await Future.wait(<Future<void>>[
           likesProvider.loadUserLikes(userId),
           chainProvider.fetchUserChains(userId),
-          chainProvider.loadUserLikedChains(userId),
+          chainProvider.loadUserLikes(userId),
         ]);
         print('AppDataInitializer: User data loaded');
       }

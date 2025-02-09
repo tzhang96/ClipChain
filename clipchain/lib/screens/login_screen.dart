@@ -73,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Your video moments, connected.',
+                      'A feeling beyond the moment.',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: colorScheme.onSurface.withOpacity(0.7),
                       ),

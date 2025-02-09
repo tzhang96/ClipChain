@@ -3,8 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/cloudinary_service.dart';
 import '../types/firestore_types.dart';
+import '../mixins/likeable_provider_mixin.dart';
 
-class VideoProvider with ChangeNotifier {
+class VideoProvider with ChangeNotifier, LikeableProviderMixin<VideoDocument> {
   final CloudinaryService _cloudinaryService = CloudinaryService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
@@ -22,21 +23,21 @@ class VideoProvider with ChangeNotifier {
   String? get feedError => _feedError;
   String? get userVideosError => _userVideosError;
 
-  /// Get videos for a specific user
-  List<VideoDocument> getVideosByUserId(String userId) {
-    return _userVideos[userId] ?? [];
-  }
+  // Implement LikeableProviderMixin requirements
+  @override
+  String get likesCollectionPath => FirestorePaths.likes;
 
-  /// Get a single video by ID
-  VideoDocument? getVideoById(String videoId) {
-    return _videos.cast<VideoDocument?>().firstWhere(
-      (v) => v?.id == videoId,
-      orElse: () => null,
-    );
-  }
+  @override
+  String get documentsCollectionPath => FirestorePaths.videos;
 
-  /// Update a video in the cache
-  void updateVideoInCache(VideoDocument video) {
+  @override
+  VideoDocument Function(Map<String, dynamic> data) get fromMap => VideoDocument.fromMap;
+
+  @override
+  String get likeableIdField => 'videoId';
+
+  @override
+  void updateItemInCache(VideoDocument video) {
     final index = _videos.indexWhere((v) => v.id == video.id);
     if (index != -1) {
       _videos[index] = video;
@@ -52,6 +53,19 @@ class VideoProvider with ChangeNotifier {
       
       notifyListeners();
     }
+  }
+
+  /// Get videos for a specific user
+  List<VideoDocument> getVideosByUserId(String userId) {
+    return _userVideos[userId] ?? [];
+  }
+
+  /// Get a single video by ID
+  VideoDocument? getVideoById(String videoId) {
+    return _videos.cast<VideoDocument?>().firstWhere(
+      (v) => v?.id == videoId,
+      orElse: () => null,
+    );
   }
 
   /// Fetch all videos (for feed)
@@ -210,5 +224,10 @@ class VideoProvider with ChangeNotifier {
     _feedError = null;
     _userVideosError = null;
     notifyListeners();
+  }
+
+  /// Update a video in the cache
+  void updateVideoInCache(VideoDocument video) {
+    updateItemInCache(video);
   }
 } 

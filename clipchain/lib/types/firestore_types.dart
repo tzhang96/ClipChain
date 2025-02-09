@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../mixins/likeable_provider_mixin.dart';
 
 /// Represents the structure of a document in the 'videos' collection
-class VideoDocument {
+class VideoDocument implements LikeableDocument {
   final String id;
   final String userId;
   final String videoUrl;
@@ -157,7 +158,7 @@ class LikeDocument {
 }
 
 /// Represents the structure of a document in the 'chains' collection
-class ChainDocument {
+class ChainDocument implements LikeableDocument {
   final String id;
   final String userId;
   final String title;

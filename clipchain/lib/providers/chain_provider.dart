@@ -1,33 +1,71 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../types/firestore_types.dart';
+import '../mixins/likeable_provider_mixin.dart';
 
-class ChainProvider with ChangeNotifier {
+class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   // Cache of chains
   List<ChainDocument> _chains = [];
   Map<String, List<ChainDocument>> _userChains = {}; // Cache of user-specific chains
-  Map<String, Set<String>> _userLikedChains = {}; // Cache of chain IDs liked by users
   
   // Loading states
   bool _isLoadingChains = false;
   bool _isLoadingUserChains = false;
-  bool _isLoadingLikes = false;
-  
-  // Error states
   String? _chainsError;
   String? _userChainsError;
-  String? _likesError;
 
   // Getters
   List<ChainDocument> get chains => _chains;
   bool get isLoadingChains => _isLoadingChains;
   bool get isLoadingUserChains => _isLoadingUserChains;
-  bool get isLoadingLikes => _isLoadingLikes;
   String? get chainsError => _chainsError;
   String? get userChainsError => _userChainsError;
-  String? get likesError => _likesError;
+
+  // Implement LikeableProviderMixin requirements
+  @override
+  String get likesCollectionPath => FirestorePaths.chainLikes;
+
+  @override
+  String get documentsCollectionPath => FirestorePaths.chains;
+
+  @override
+  ChainDocument Function(Map<String, dynamic> data) get fromMap => ChainDocument.fromMap;
+
+  @override
+  String get likeableIdField => 'chainId';
+
+  @override
+  void updateItemInCache(ChainDocument chain) {
+    print('ChainProvider: Updating chain ${chain.id} in cache');
+    final index = _chains.indexWhere((c) => c.id == chain.id);
+    if (index != -1) {
+      print('ChainProvider: Found chain at index $index');
+      _chains[index] = chain;
+      
+      // Also update in user chains if present
+      final userChains = _userChains[chain.userId];
+      if (userChains != null) {
+        final userIndex = userChains.indexWhere((c) => c.id == chain.id);
+        if (userIndex != -1) {
+          print('ChainProvider: Updating chain in user cache');
+          userChains[userIndex] = chain;
+        }
+      }
+    } else {
+      print('ChainProvider: Chain not found in cache, adding it');
+      _chains = [chain, ..._chains];
+      
+      // Also add to user chains if we have that user's chains
+      final userChains = _userChains[chain.userId];
+      if (userChains != null) {
+        print('ChainProvider: Adding chain to user cache');
+        _userChains[chain.userId] = [chain, ...userChains];
+      }
+    }
+    notifyListeners();
+  }
 
   // Get chains for a specific user
   List<ChainDocument> getChainsByUserId(String userId) {
@@ -44,16 +82,6 @@ class ChainProvider with ChangeNotifier {
     );
     print('ChainProvider: Found chain: ${chain?.id}, likes: ${chain?.likes}');
     return chain;
-  }
-
-  // Check if a chain is liked by a user
-  bool isChainLiked(String userId, String chainId) {
-    return _userLikedChains[userId]?.contains(chainId) ?? false;
-  }
-
-  // Get all chain IDs liked by a user
-  Set<String> getLikedChainIds(String userId) {
-    return _userLikedChains[userId] ?? {};
   }
 
   // Add a chain to the main cache if it's not already there
@@ -289,233 +317,16 @@ class ChainProvider with ChangeNotifier {
     }
   }
 
-  /// Load liked chains for a user
-  Future<void> loadUserLikedChains(String userId) async {
-    try {
-      // Defer initial state update
-      Future.microtask(() {
-        _isLoadingLikes = true;
-        _likesError = null;
-        notifyListeners();
-      });
-
-      final QuerySnapshot likesSnapshot = await _firestore
-          .collection(FirestorePaths.chainLikes)
-          .where('userId', isEqualTo: userId)
-          .get();
-
-      final likedChainIds = likesSnapshot.docs
-          .map((doc) => doc.get('chainId') as String)
-          .toSet();
-
-      // Fetch the actual chain data for all liked chains
-      final chainDocs = await Future.wait(
-        likedChainIds.map((chainId) => 
-          _firestore.collection(FirestorePaths.chains).doc(chainId).get()
-        )
-      );
-
-      final likedChains = chainDocs
-          .where((doc) => doc.exists)
-          .map((doc) {
-            final data = doc.data()!;
-            data['id'] = doc.id;
-            return ChainDocument.fromMap(data);
-          })
-          .toList();
-
-      // Schedule state update after async complete
-      Future.microtask(() {
-        _userLikedChains[userId] = likedChainIds;
-        // Add liked chains to the main cache
-        for (final chain in likedChains) {
-          final index = _chains.indexWhere((c) => c.id == chain.id);
-          if (index != -1) {
-            _chains[index] = chain;
-          } else {
-            _chains.add(chain);
-          }
-        }
-        _isLoadingLikes = false;
-        notifyListeners();
-      });
-
-    } catch (e) {
-      Future.microtask(() {
-        _likesError = 'Failed to load liked chains: $e';
-        _isLoadingLikes = false;
-        notifyListeners();
-      });
-    }
-  }
-
-  /// Toggle like status for a chain
-  Future<void> toggleChainLike(String userId, String chainId) async {
-    try {
-      print('ChainProvider: Toggling like for chain $chainId by user $userId');
-      // Defer initial state update
-      Future.microtask(() {
-        _isLoadingLikes = true;
-        _likesError = null;
-        notifyListeners();
-      });
-
-      final isLiked = isChainLiked(userId, chainId);
-      print('ChainProvider: Current like status: $isLiked');
-      
-      if (isLiked) {
-        // Unlike
-        print('ChainProvider: Unliking chain');
-        await _firestore
-            .collection(FirestorePaths.chainLikes)
-            .where('userId', isEqualTo: userId)
-            .where('chainId', isEqualTo: chainId)
-            .get()
-            .then((snapshot) {
-          return Future.wait(
-            snapshot.docs.map((doc) => doc.reference.delete()),
-          );
-        });
-
-        // Update chain likes count
-        await _firestore
-            .collection(FirestorePaths.chains)
-            .doc(chainId)
-            .update({'likes': FieldValue.increment(-1)});
-
-        // Fetch updated chain data
-        final updatedDoc = await _firestore
-            .collection(FirestorePaths.chains)
-            .doc(chainId)
-            .get();
-
-        if (!updatedDoc.exists) {
-          throw Exception('Chain not found');
-        }
-
-        final data = updatedDoc.data()!;
-        data['id'] = updatedDoc.id;
-        final updatedChain = ChainDocument.fromMap(data);
-        print('ChainProvider: Fetched updated chain data - likes: ${updatedChain.likes}');
-
-        // Schedule state update
-        Future.microtask(() {
-          print('ChainProvider: Updating cache with new chain data');
-          _userLikedChains[userId]?.remove(chainId);
-          
-          // Update in main chains list
-          final index = _chains.indexWhere((c) => c.id == chainId);
-          if (index != -1) {
-            print('ChainProvider: Updating chain in main cache at index $index');
-            print('ChainProvider: Old likes: ${_chains[index].likes}, New likes: ${updatedChain.likes}');
-            _chains[index] = updatedChain;
-          } else {
-            print('ChainProvider: Chain not found in main cache');
-          }
-
-          // Update in user chains list
-          final userChains = _userChains[updatedChain.userId];
-          if (userChains != null) {
-            final userIndex = userChains.indexWhere((c) => c.id == chainId);
-            if (userIndex != -1) {
-              print('ChainProvider: Updating chain in user cache at index $userIndex');
-              userChains[userIndex] = updatedChain;
-            } else {
-              print('ChainProvider: Chain not found in user cache');
-            }
-          }
-
-          _isLoadingLikes = false;
-          print('ChainProvider: Notifying listeners of update');
-          notifyListeners();
-        });
-
-      } else {
-        // Like
-        print('ChainProvider: Liking chain');
-        await _firestore
-            .collection(FirestorePaths.chainLikes)
-            .add({
-              'userId': userId,
-              'chainId': chainId,
-              'createdAt': Timestamp.now(),
-            });
-
-        // Update chain likes count
-        await _firestore
-            .collection(FirestorePaths.chains)
-            .doc(chainId)
-            .update({'likes': FieldValue.increment(1)});
-
-        // Fetch updated chain data
-        final updatedDoc = await _firestore
-            .collection(FirestorePaths.chains)
-            .doc(chainId)
-            .get();
-
-        if (!updatedDoc.exists) {
-          throw Exception('Chain not found');
-        }
-
-        final data = updatedDoc.data()!;
-        data['id'] = updatedDoc.id;
-        final updatedChain = ChainDocument.fromMap(data);
-        print('ChainProvider: Fetched updated chain data - likes: ${updatedChain.likes}');
-
-        // Schedule state update
-        Future.microtask(() {
-          print('ChainProvider: Updating cache with new chain data');
-          _userLikedChains.putIfAbsent(userId, () => {}).add(chainId);
-          
-          // Update in main chains list
-          final index = _chains.indexWhere((c) => c.id == chainId);
-          if (index != -1) {
-            print('ChainProvider: Updating chain in main cache at index $index');
-            print('ChainProvider: Old likes: ${_chains[index].likes}, New likes: ${updatedChain.likes}');
-            _chains[index] = updatedChain;
-          } else {
-            print('ChainProvider: Chain not found in main cache');
-          }
-
-          // Update in user chains list
-          final userChains = _userChains[updatedChain.userId];
-          if (userChains != null) {
-            final userIndex = userChains.indexWhere((c) => c.id == chainId);
-            if (userIndex != -1) {
-              print('ChainProvider: Updating chain in user cache at index $userIndex');
-              userChains[userIndex] = updatedChain;
-            } else {
-              print('ChainProvider: Chain not found in user cache');
-            }
-          }
-
-          _isLoadingLikes = false;
-          print('ChainProvider: Notifying listeners of update');
-          notifyListeners();
-        });
-      }
-
-    } catch (e) {
-      print('ChainProvider: Error toggling like: $e');
-      Future.microtask(() {
-        _likesError = 'Failed to toggle chain like: $e';
-        _isLoadingLikes = false;
-        notifyListeners();
-      });
-    }
-  }
-
   /// Clear all cached data
+  @override
   void clear() {
     _chains.clear();
     _userChains.clear();
-    _userLikedChains.clear();
     _isLoadingChains = false;
     _isLoadingUserChains = false;
-    _isLoadingLikes = false;
     _chainsError = null;
     _userChainsError = null;
-    _likesError = null;
+    clearLikes();  // Clear likes from the mixin
     notifyListeners();
   }
 } 
