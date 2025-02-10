@@ -14,6 +14,7 @@ import 'config/cloudinary_config.dart';
 import 'app_data_initializer.dart';
 import 'providers/video_player_provider.dart';
 import 'services/media_kit_player_impl.dart';
+import 'global.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,6 +65,7 @@ class App extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'ClipChain',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),

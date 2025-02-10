@@ -117,4 +117,62 @@ class CloudinaryService {
   bool isCloudinaryUrl(String url) {
     return url.contains('cloudinary.com');
   }
+
+  /// Extracts the public ID from a Cloudinary URL
+  String extractPublicId(String url) {
+    // Extract public ID from the URL
+    final regex = RegExp(r'v\d+/(.+?)\.');
+    final match = regex.firstMatch(url);
+    if (match == null) throw Exception('Invalid Cloudinary URL format');
+    final publicId = match.group(1);
+    if (publicId == null) throw Exception('Could not extract public ID from URL');
+    return publicId;
+  }
+
+  /// Deletes a video and its thumbnail from Cloudinary
+  Future<void> deleteVideo(String videoUrl, String? thumbnailUrl) async {
+    try {
+      print('CloudinaryService: Starting video deletion...');
+
+      if (!isCloudinaryUrl(videoUrl)) {
+        throw Exception('Invalid Cloudinary video URL');
+      }
+
+      // Extract public IDs
+      final videoPublicId = extractPublicId(videoUrl);
+      String? thumbnailPublicId;
+      if (thumbnailUrl != null && isCloudinaryUrl(thumbnailUrl)) {
+        thumbnailPublicId = extractPublicId(thumbnailUrl);
+      }
+
+      // Delete video
+      final videoResponse = await _cloudinary.deleteResources(
+        resourceType: CloudinaryResourceType.video,
+        publicIds: [videoPublicId],
+      );
+
+      if (!videoResponse.isSuccessful) {
+        throw Exception('Failed to delete video: ${videoResponse.error}');
+      }
+
+      // Delete thumbnail if it exists
+      if (thumbnailPublicId != null) {
+        final thumbnailResponse = await _cloudinary.deleteResources(
+          resourceType: CloudinaryResourceType.image,
+          publicIds: [thumbnailPublicId],
+        );
+
+        if (!thumbnailResponse.isSuccessful) {
+          print('CloudinaryService: Warning - Failed to delete thumbnail: ${thumbnailResponse.error}');
+          // Don't throw here as the video deletion was successful
+        }
+      }
+
+      print('CloudinaryService: Video deletion successful');
+    } catch (e, stackTrace) {
+      print('CloudinaryService: Error deleting video: $e');
+      print('CloudinaryService: Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
 } 

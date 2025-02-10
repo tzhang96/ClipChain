@@ -329,4 +329,76 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
     clearLikes();  // Clear likes from the mixin
     notifyListeners();
   }
+
+  /// Remove a video from all chains that contain it
+  Future<void> removeVideoFromAllChains(String videoId) async {
+    try {
+      print('ChainProvider: Removing video $videoId from all chains');
+
+      // Find all chains containing this video
+      final QuerySnapshot chainSnapshot = await _firestore
+          .collection(FirestorePaths.chains)
+          .where('videoIds', arrayContains: videoId)
+          .get();
+
+      if (chainSnapshot.docs.isEmpty) {
+        print('ChainProvider: No chains found containing video $videoId');
+        return;
+      }
+
+      print('ChainProvider: Found ${chainSnapshot.docs.length} chains containing the video');
+
+      // Start a batch write
+      final batch = _firestore.batch();
+
+      for (var doc in chainSnapshot.docs) {
+        final chain = ChainDocument.fromMap({...doc.data() as Map<String, dynamic>, 'id': doc.id});
+        
+        // Remove the video ID from the chain
+        final updatedVideoIds = chain.videoIds.where((id) => id != videoId).toList();
+        
+        // Update the chain document
+        batch.update(doc.reference, {
+          'videoIds': updatedVideoIds,
+          'updatedAt': Timestamp.now(),
+        });
+
+        // Update local cache
+        final updatedChain = ChainDocument(
+          id: chain.id,
+          userId: chain.userId,
+          title: chain.title,
+          description: chain.description,
+          likes: chain.likes,
+          videoIds: updatedVideoIds,
+          createdAt: chain.createdAt,
+          updatedAt: Timestamp.now(),
+        );
+
+        // Update in main cache
+        final index = _chains.indexWhere((c) => c.id == chain.id);
+        if (index != -1) {
+          _chains[index] = updatedChain;
+        }
+
+        // Update in user cache
+        final userChains = _userChains[chain.userId];
+        if (userChains != null) {
+          final userIndex = userChains.indexWhere((c) => c.id == chain.id);
+          if (userIndex != -1) {
+            userChains[userIndex] = updatedChain;
+          }
+        }
+      }
+
+      // Commit all updates
+      await batch.commit();
+
+      print('ChainProvider: Successfully removed video from all chains');
+      notifyListeners();
+    } catch (e) {
+      print('ChainProvider: Error removing video from chains: $e');
+      rethrow;
+    }
+  }
 } 

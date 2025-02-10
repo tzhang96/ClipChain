@@ -4,6 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/cloudinary_service.dart';
 import '../types/firestore_types.dart';
 import '../mixins/likeable_provider_mixin.dart';
+import 'package:provider/provider.dart';
+import '../providers/chain_provider.dart';
+import 'package:flutter/material.dart';
+import '../global.dart';
 
 class VideoProvider with ChangeNotifier, LikeableProviderMixin<VideoDocument> {
   final CloudinaryService _cloudinaryService = CloudinaryService();
@@ -229,5 +233,69 @@ class VideoProvider with ChangeNotifier, LikeableProviderMixin<VideoDocument> {
   /// Update a video in the cache
   void updateVideoInCache(VideoDocument video) {
     updateItemInCache(video);
+  }
+
+  /// Delete a video and all associated data
+  Future<void> deleteVideo(String videoId) async {
+    try {
+      print('VideoProvider: Starting video deletion process for $videoId');
+
+      // Get the video document
+      final videoDoc = await _firestore
+          .collection(FirestorePaths.videos)
+          .doc(videoId)
+          .get();
+
+      if (!videoDoc.exists) {
+        throw Exception('Video document not found');
+      }
+
+      final video = VideoDocument.fromMap({...videoDoc.data()!, 'id': videoDoc.id});
+
+      // Delete from Cloudinary first (if this fails, we won't proceed with Firestore deletion)
+      await _cloudinaryService.deleteVideo(video.videoUrl, video.thumbnailUrl);
+
+      // Start a batch write for Firestore operations
+      final batch = _firestore.batch();
+
+      // Delete the video document
+      batch.delete(_firestore.collection(FirestorePaths.videos).doc(videoId));
+
+      // Delete all likes for this video
+      final likesQuery = await _firestore
+          .collection(FirestorePaths.likes)
+          .where('videoId', isEqualTo: videoId)
+          .get();
+      
+      for (var doc in likesQuery.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Commit Firestore batch
+      await batch.commit();
+
+      // Remove video from all chains (this is done after the main deletion succeeds)
+      try {
+        final chainProvider = Provider.of<ChainProvider>(navigatorKey.currentContext!, listen: false);
+        await chainProvider.removeVideoFromAllChains(videoId);
+      } catch (e) {
+        print('VideoProvider: Error cleaning up chains: $e');
+        // Don't rethrow as the main deletion was successful
+      }
+
+      // Update local caches
+      _videos.removeWhere((v) => v.id == videoId);
+      for (var userVideos in _userVideos.values) {
+        userVideos.removeWhere((v) => v.id == videoId);
+      }
+
+      // Notify listeners of the change
+      notifyListeners();
+
+      print('VideoProvider: Successfully deleted video $videoId');
+    } catch (e) {
+      print('VideoProvider: Error deleting video: $e');
+      rethrow;
+    }
   }
 } 

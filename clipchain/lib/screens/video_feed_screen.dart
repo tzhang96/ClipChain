@@ -95,14 +95,14 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
   Future<void> _initializeVideo(int index) async {
     if (!mounted) return;
 
-    if (index < 0 || index >= _videos.length) {
-      print('VideoFeedScreen: Invalid video index: $index');
-      return;
-    }
+      if (index < 0 || index >= _videos.length) {
+        print('VideoFeedScreen: Invalid video index: $index');
+        return;
+      }
 
-    final video = _videos[index];
-    String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
-    print('VideoFeedScreen: Optimized URL: $videoUrl');
+      final video = _videos[index];
+      String videoUrl = _cloudinaryService.getOptimizedVideoUrl(video.videoUrl);
+      print('VideoFeedScreen: Optimized URL: $videoUrl');
 
     // Initialize video in provider
     await context.read<VideoPlayerProvider>().initializeVideo(video.id, videoUrl);
@@ -217,47 +217,47 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                   final video = _videos[index];
                   
                   return Stack(
-                    fit: StackFit.expand,
-                    children: [
+                      fit: StackFit.expand,
+                      children: [
                       const VideoPlayerWidget(),
-                      
-                      // Video Info Overlay
-                      Positioned(
-                        bottom: 80,
-                        left: 16,
-                        right: 16,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // User Info Row
-                            Consumer<UserProvider>(
-                              builder: (context, userProvider, child) {
-                                final user = userProvider.getUser(video.userId);
-                                
-                                // Fetch user data if not available
-                                if (user == null && !userProvider.isLoading(video.userId)) {
-                                  // Schedule the fetch after the current build
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    if (mounted) {
-                                      userProvider.fetchUser(video.userId);
-                                    }
-                                  });
-                                }
+                        
+                        // Video Info Overlay
+                        Positioned(
+                          bottom: 80,
+                          left: 16,
+                          right: 16,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // User Info Row
+                              Consumer<UserProvider>(
+                                builder: (context, userProvider, child) {
+                                  final user = userProvider.getUser(video.userId);
+                                  
+                                  // Fetch user data if not available
+                                  if (user == null && !userProvider.isLoading(video.userId)) {
+                                    // Schedule the fetch after the current build
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (mounted) {
+                                        userProvider.fetchUser(video.userId);
+                                      }
+                                    });
+                                  }
 
                                 return Row(
                                   children: [
                                     GestureDetector(
-                                      onTap: () {
-                                        Navigator.of(context).pushAndRemoveUntil(
-                                          MaterialPageRoute(
-                                            builder: (context) => ProfileScreen(userId: video.userId),
-                                          ),
-                                          (route) => false,
-                                        );
-                                      },
-                                      child: Row(
-                                        children: [
-                                          CircleAvatar(
+                                    onTap: () {
+                                      Navigator.of(context).pushAndRemoveUntil(
+                                        MaterialPageRoute(
+                                          builder: (context) => ProfileScreen(userId: video.userId),
+                                        ),
+                                        (route) => false,
+                                      );
+                                    },
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
                                             radius: 16,
                                             backgroundColor: Colors.grey[300],
                                             child: Text(
@@ -267,72 +267,72 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          user?.username ?? 'Loading...',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
                                           ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            user?.username ?? 'Loading...',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
+                                    ),
                                     ),
                                   ],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              video.description,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
+                                  );
+                                },
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Consumer2<AuthProvider, LikesProvider>(
-                              builder: (context, authProvider, likesProvider, child) {
-                                final userId = authProvider.user?.uid;
-                                final isLiked = userId != null && 
-                                    likesProvider.isVideoLiked(userId, video.id);
+                              const SizedBox(height: 8),
+                              Text(
+                                video.description,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Consumer2<AuthProvider, LikesProvider>(
+                                builder: (context, authProvider, likesProvider, child) {
+                                  final userId = authProvider.user?.uid;
+                                  final isLiked = userId != null && 
+                                      likesProvider.isVideoLiked(userId, video.id);
 
-                                return Row(
-                                  children: [
+                                  return Row(
+                                    children: [
                                     // Like Button
                                     IconButton(
                                       icon: Icon(
-                                        isLiked ? Icons.favorite : Icons.favorite_border,
-                                        color: isLiked ? Colors.red : Colors.white,
+                                          isLiked ? Icons.favorite : Icons.favorite_border,
+                                          color: isLiked ? Colors.red : Colors.white,
                                       ),
                                       onPressed: userId == null
                                           ? null
                                           : () => likesProvider.toggleLike(userId, video.id),
                                     ),
-                                    Text(
-                                      '${video.likes}',
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                    const SizedBox(width: 16),
+                                      Text(
+                                        '${video.likes}',
+                                        style: const TextStyle(color: Colors.white),
+                                      ),
+                                      const SizedBox(width: 16),
                                     // Add to Chain Button
                                     if (userId != null && userId != video.userId)
                                       IconButton(
                                         icon: const Icon(Icons.playlist_add, color: Colors.white),
                                         onPressed: () {
                                           showModalBottomSheet(
-                                            context: context,
-                                            isScrollControlled: true,
+                                              context: context,
+                                              isScrollControlled: true,
                                             builder: (context) => Padding(
                                               padding: EdgeInsets.only(
                                                 bottom: MediaQuery.of(context).viewInsets.bottom,
                                               ),
-                                              child: AddToChainSheet(
-                                                videoId: video.id,
-                                                userId: userId,
+                                                child: AddToChainSheet(
+                                                  videoId: video.id,
+                                                  userId: userId,
+                                                ),
                                               ),
-                                            ),
-                                          );
+                                            );
                                         },
                                       ),
                                     // Create Chain Button
@@ -349,14 +349,134 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                           );
                                         },
                                       ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
+                                    if (userId != null && userId == video.userId)
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                                        color: Colors.white,
+                                        onSelected: (value) async {
+                                          if (value == 'delete') {
+                                            // Show confirmation dialog
+                                            final shouldDelete = await showDialog<bool>(
+                                              context: context,
+                                              builder: (context) => AlertDialog(
+                                                title: const Text('Delete Video'),
+                                                content: const Text(
+                                                  'Are you sure you want to delete this video?\n\n'
+                                                  'This will:\n'
+                                                  '• Delete the video permanently\n'
+                                                  '• Remove all likes on this video\n'
+                                                  '• Remove it from all chains\n\n'
+                                                  'This action cannot be undone.'
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () => Navigator.of(context).pop(false),
+                                                    child: const Text('Cancel'),
+                                                  ),
+                                                  TextButton(
+                                                    style: TextButton.styleFrom(
+                                                      foregroundColor: Colors.red,
+                                                    ),
+                                                    onPressed: () => Navigator.of(context).pop(true),
+                                                    child: const Text('Delete'),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+
+                                            if (shouldDelete == true) {
+                                              try {
+                                                // Show loading indicator
+                                                showDialog(
+                                                  context: context,
+                                                  barrierDismissible: false,
+                                                  builder: (context) => const Center(
+                                                    child: CircularProgressIndicator(),
+                                                  ),
+                                                );
+
+                                                // Delete the video
+                                                await context.read<VideoProvider>().deleteVideo(video.id);
+
+                                                // Dismiss loading indicator
+                                                Navigator.of(context).pop();
+
+                                                // Show success message
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text('Video deleted successfully'),
+                                                    ),
+                                                  );
+                                                }
+
+                                                // Handle navigation
+                                                if (_videos.isEmpty) {
+                                                  // If no videos left, navigate to profile
+                                                  if (mounted) {
+                                                    Navigator.of(context).pushNamedAndRemoveUntil(
+                                                      '/profile',
+                                                      (route) => false,
+                                                    );
+                                                  }
+                                                } else {
+                                                  // Move to next video if available
+                                                  final currentIndex = _pageController.page?.round() ?? 0;
+                                                  if (currentIndex < _videos.length - 1) {
+                                                    await _pageController.animateToPage(
+                                                      currentIndex + 1,
+                                                      duration: const Duration(milliseconds: 300),
+                                                      curve: Curves.easeInOut,
+                                                    );
+                                                  } else if (currentIndex > 0) {
+                                                    await _pageController.animateToPage(
+                                                      currentIndex - 1,
+                                                      duration: const Duration(milliseconds: 300),
+                                                      curve: Curves.easeInOut,
+                                                    );
+                                                  }
+                                                }
+                                              } catch (e) {
+                                                // Dismiss loading indicator
+                                                Navigator.of(context).pop();
+
+                                                // Show error message
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Error deleting video: $e'),
+                                                      backgroundColor: Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        itemBuilder: (BuildContext context) => [
+                                          const PopupMenuItem<String>(
+                                            value: 'delete',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.delete, color: Colors.red),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  'Delete',
+                                                  style: TextStyle(color: Colors.red),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
                   );
                 },
               ),
@@ -372,31 +492,31 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                     behavior: HitTestBehavior.opaque,
                     child: widget.headerBuilder?.call(context, widget.onHeaderTap ?? () {}) ??
                       Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                widget.title!,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.title!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const Icon(
-                              Icons.grid_view,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ],
-                        ),
+                          ),
+                          const Icon(
+                            Icons.grid_view,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ],
                       ),
+                    ),
                   ),
                 ),
             ],
