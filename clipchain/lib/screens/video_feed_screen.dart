@@ -219,7 +219,7 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                   return Stack(
                       fit: StackFit.expand,
                       children: [
-                      const VideoPlayerWidget(),
+                        const VideoPlayerWidget(),
                         
                         // Video Info Overlay
                         Positioned(
@@ -244,42 +244,42 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                     });
                                   }
 
-                                return Row(
-                                  children: [
-                                    GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(context).pushAndRemoveUntil(
-                                        MaterialPageRoute(
-                                          builder: (context) => ProfileScreen(userId: video.userId),
-                                        ),
-                                        (route) => false,
-                                      );
-                                    },
-                                    child: Row(
-                                      children: [
-                                        CircleAvatar(
-                                            radius: 16,
-                                            backgroundColor: Colors.grey[300],
-                                            child: Text(
-                                              user?.username.substring(0, 1).toUpperCase() ?? '?',
+                                  return Row(
+                                    children: [
+                                      GestureDetector(
+                                        onTap: () {
+                                          Navigator.of(context).pushAndRemoveUntil(
+                                            MaterialPageRoute(
+                                              builder: (context) => ProfileScreen(userId: video.userId),
+                                            ),
+                                            (route) => false,
+                                          );
+                                        },
+                                        child: Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 16,
+                                              backgroundColor: Colors.grey[300],
+                                              child: Text(
+                                                user?.username.substring(0, 1).toUpperCase() ?? '?',
+                                                style: const TextStyle(
+                                                  color: Colors.black87,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              user?.username ?? 'Loading...',
                                               style: const TextStyle(
-                                                color: Colors.black87,
+                                                color: Colors.white,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          user?.username ?? 'Loading...',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    ),
-                                  ],
+                                      ),
+                                    ],
                                   );
                                 },
                               ),
@@ -492,31 +492,31 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                     behavior: HitTestBehavior.opaque,
                     child: widget.headerBuilder?.call(context, widget.onHeaderTap ?? () {}) ??
                       Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.title!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.title!,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ),
-                          const Icon(
-                            Icons.grid_view,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ],
+                            const Icon(
+                              Icons.grid_view,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ),
                 ),
             ],

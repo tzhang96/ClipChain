@@ -7,6 +7,7 @@ import '../providers/user_provider.dart';
 import '../providers/chain_provider.dart';
 import '../providers/auth_provider.dart';
 import 'video_feed_screen.dart';
+import 'chain_view_screen.dart';
 
 class ChainFeedScreen extends StatelessWidget {
   final ChainDocument chain;
@@ -119,22 +120,15 @@ class ChainFeedScreen extends StatelessWidget {
         .map((video) => video!)
         .toList();
 
-    // Create feed source for navigation
-    final feedSource = ChainFeedSource(
-      chain: chain,
-      username: user?.username ?? 'Loading...',
-    );
-
     return VideoFeedScreen(
       customVideos: videos,
       initialIndex: initialVideoIndex.clamp(0, videos.length - 1),
       title: chain.title,
       onHeaderTap: () {
-        Navigator.of(context).pushAndRemoveUntil(
+        Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => feedSource.buildReturnScreen(),
+            builder: (context) => ChainViewScreen(chain: chain),
           ),
-          (route) => false,
         );
       },
       headerBuilder: (context, onTap) => _buildHeader(context, onTap),

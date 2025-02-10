@@ -4,6 +4,7 @@ import '../types/firestore_types.dart';
 import '../providers/chain_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/video_provider.dart';
+import '../screens/chain_view_screen.dart';
 
 class ChainGrid extends StatelessWidget {
   final List<ChainDocument> chains;
@@ -54,7 +55,18 @@ class ChainGrid extends StatelessWidget {
       itemBuilder: (context, index) {
         final chain = chains[index];
         return GestureDetector(
-          onTap: () => onChainTap?.call(chain.id),
+          onTap: () {
+            if (onChainTap != null) {
+              onChainTap!(chain.id);
+            } else {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => ChainViewScreen(chain: chain),
+                ),
+                (route) => false,
+              );
+            }
+          },
           child: Card(
             clipBehavior: Clip.antiAlias,
             child: Stack(

@@ -8,6 +8,7 @@ import '../screens/video_feed_screen.dart';
 import 'authenticated_view.dart';
 import '../screens/profile_screen.dart';
 import '../screens/chain_feed_screen.dart';
+import '../screens/chain_view_screen.dart';
 
 class TabData {
   final String label;
@@ -162,10 +163,7 @@ class VideoGridViewState extends State<VideoGridView> with TickerProviderStateMi
     if (chain != null) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (context) => ChainFeedScreen(
-            chain: chain,
-            initialVideoIndex: 0,
-          ),
+          builder: (context) => ChainViewScreen(chain: chain),
         ),
         (route) => false,
       );
