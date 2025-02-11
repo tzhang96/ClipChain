@@ -1,5 +1,5 @@
 ---
-description: command line tasks
+description: command line tasks, bash, CLI
 globs: 
 ---
 - Always use Powershell syntax when giving command line prompts.
