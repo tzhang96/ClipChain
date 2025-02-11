@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../providers/chain_provider.dart';
 import 'package:flutter/material.dart';
 import '../global.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class VideoProvider with ChangeNotifier, LikeableProviderMixin<VideoDocument> {
   final CloudinaryService _cloudinaryService = CloudinaryService();
@@ -297,5 +298,55 @@ class VideoProvider with ChangeNotifier, LikeableProviderMixin<VideoDocument> {
       print('VideoProvider: Error deleting video: $e');
       rethrow;
     }
+  }
+
+  /// Get analysis status for a video
+  String? getVideoAnalysisStatus(String videoId) {
+    final video = getVideoById(videoId);
+    return video?.analysis?.status;
+  }
+
+  /// Check if a video is being analyzed
+  bool isVideoBeingAnalyzed(String videoId) {
+    final status = getVideoAnalysisStatus(videoId);
+    return status == VideoAnalysis.STATUS_PENDING;
+  }
+
+  /// Check if a video analysis has failed
+  bool hasVideoAnalysisFailed(String videoId) {
+    final status = getVideoAnalysisStatus(videoId);
+    return status == VideoAnalysis.STATUS_FAILED;
+  }
+
+  /// Get video analysis error if any
+  String? getVideoAnalysisError(String videoId) {
+    final video = getVideoById(videoId);
+    return video?.analysis?.error;
+  }
+
+  /// Request reanalysis of a video
+  Future<void> reanalyzeVideo(String videoId) async {
+    try {
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('reanalyzeVideo');
+      await callable.call({'videoId': videoId});
+    } catch (e) {
+      print('VideoProvider: Error requesting video reanalysis: $e');
+      rethrow;
+    }
+  }
+
+  /// Listen for analysis updates on a specific video
+  Stream<VideoAnalysis?> videoAnalysisStream(String videoId) {
+    return _firestore
+        .collection(FirestorePaths.videos)
+        .doc(videoId)
+        .snapshots()
+        .map((snapshot) {
+          if (!snapshot.exists) return null;
+          final data = snapshot.data();
+          if (data == null || !data.containsKey('analysis')) return null;
+          return VideoAnalysis.fromMap(data['analysis'] as Map<String, dynamic>);
+        });
   }
 } 

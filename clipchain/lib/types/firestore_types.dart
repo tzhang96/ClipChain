@@ -10,6 +10,7 @@ class VideoDocument implements LikeableDocument {
   final String description;
   final int likes;
   final Timestamp createdAt;
+  final VideoAnalysis? analysis;
 
   const VideoDocument({
     required this.id,
@@ -19,6 +20,7 @@ class VideoDocument implements LikeableDocument {
     required this.description,
     required this.likes,
     required this.createdAt,
+    this.analysis,
   });
 
   factory VideoDocument.fromMap(Map<String, dynamic> map) {
@@ -30,6 +32,9 @@ class VideoDocument implements LikeableDocument {
       description: map['description'] as String,
       likes: map['likes'] as int,
       createdAt: map['createdAt'] as Timestamp,
+      analysis: map['analysis'] != null 
+        ? VideoAnalysis.fromMap(map['analysis'] as Map<String, dynamic>)
+        : null,
     );
   }
 
@@ -41,7 +46,28 @@ class VideoDocument implements LikeableDocument {
     'description': description,
     'likes': likes,
     'createdAt': createdAt,
+    'analysis': analysis?.toMap(),
   };
+
+  VideoDocument copyWith({
+    String? id,
+    String? userId,
+    String? videoUrl,
+    String? thumbnailUrl,
+    String? description,
+    int? likes,
+    Timestamp? createdAt,
+    VideoAnalysis? analysis,
+  }) => VideoDocument(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    videoUrl: videoUrl ?? this.videoUrl,
+    thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+    description: description ?? this.description,
+    likes: likes ?? this.likes,
+    createdAt: createdAt ?? this.createdAt,
+    analysis: analysis ?? this.analysis,
+  );
 }
 
 /// Represents the structure of a document in the 'users' collection
@@ -224,4 +250,72 @@ class FirestorePaths {
   
   /// Helper method to get a user's chains subcollection path
   static String userChains(String userId) => 'users/$userId/chains';
+}
+
+class VideoAnalysis {
+  final String summary;
+  final List<String> colors;
+  final String style;
+  final String mood;
+  final Timestamp analyzedAt;
+  final String? error;
+  final String status;
+  final int version;
+
+  static const String STATUS_PENDING = 'pending';
+  static const String STATUS_COMPLETED = 'completed';
+  static const String STATUS_FAILED = 'failed';
+
+  const VideoAnalysis({
+    required this.summary,
+    required this.colors,
+    required this.style,
+    required this.mood,
+    required this.analyzedAt,
+    this.error,
+    required this.status,
+    required this.version,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'summary': summary,
+    'colors': colors,
+    'style': style,
+    'mood': mood,
+    'analyzedAt': analyzedAt,
+    'error': error,
+    'status': status,
+    'version': version,
+  };
+
+  factory VideoAnalysis.fromMap(Map<String, dynamic> map) => VideoAnalysis(
+    summary: map['summary'] as String? ?? '',
+    colors: List<String>.from(map['colors'] as List? ?? []),
+    style: map['style'] as String? ?? '',
+    mood: map['mood'] as String? ?? '',
+    analyzedAt: map['analyzedAt'] as Timestamp? ?? Timestamp.now(),
+    error: map['error'] as String?,
+    status: map['status'] as String? ?? STATUS_PENDING,
+    version: map['version'] as int? ?? 1,
+  );
+
+  VideoAnalysis copyWith({
+    String? summary,
+    List<String>? colors,
+    String? style,
+    String? mood,
+    Timestamp? analyzedAt,
+    String? error,
+    String? status,
+    int? version,
+  }) => VideoAnalysis(
+    summary: summary ?? this.summary,
+    colors: colors ?? this.colors,
+    style: style ?? this.style,
+    mood: mood ?? this.mood,
+    analyzedAt: analyzedAt ?? this.analyzedAt,
+    error: error ?? this.error,
+    status: status ?? this.status,
+    version: version ?? this.version,
+  );
 } 
