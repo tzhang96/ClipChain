@@ -87,10 +87,11 @@ class ChainViewScreen extends StatelessWidget {
                       // Creator info row
                       GestureDetector(
                         onTap: () {
-                          Navigator.of(context).push(
+                          Navigator.of(context).pushAndRemoveUntil(
                             MaterialPageRoute(
                               builder: (context) => ProfileScreen(userId: chain.userId),
                             ),
+                            (route) => false,
                           );
                         },
                         child: Row(

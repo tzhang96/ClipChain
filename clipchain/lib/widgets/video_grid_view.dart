@@ -50,6 +50,7 @@ class VideoGridView extends StatefulWidget {
   final String? title;
   final int selectedIndex;
   final String? userId;
+  final bool showAppBar;  // Add new parameter
 
   const VideoGridView({
     super.key,
@@ -60,6 +61,7 @@ class VideoGridView extends StatefulWidget {
     this.title,
     required this.selectedIndex,
     this.userId,
+    this.showAppBar = true,  // Default to true for backward compatibility
   });
 
   @override
@@ -175,7 +177,7 @@ class VideoGridViewState extends State<VideoGridView> with TickerProviderStateMi
     return AuthenticatedView(
       selectedIndex: widget.selectedIndex,
       body: Scaffold(
-        appBar: widget.showBackButton || widget.title != null
+        appBar: widget.showAppBar && (widget.showBackButton || widget.title != null)
           ? AppBar(
               title: widget.title != null ? Text(widget.title!) : null,
               backgroundColor: Colors.transparent,

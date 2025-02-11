@@ -248,11 +248,13 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                     children: [
                                       GestureDetector(
                                         onTap: () {
-                                          Navigator.of(context).pushAndRemoveUntil(
+                                          Navigator.of(context).push(
                                             MaterialPageRoute(
-                                              builder: (context) => ProfileScreen(userId: video.userId),
+                                              builder: (context) => ProfileScreen(
+                                                userId: video.userId,
+                                                showNavBar: false,
+                                              ),
                                             ),
-                                            (route) => false,
                                           );
                                         },
                                         child: Row(

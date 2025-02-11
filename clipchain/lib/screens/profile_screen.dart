@@ -11,10 +11,12 @@ import '../models/feed_source.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
+  final bool showNavBar;
 
   const ProfileScreen({
     super.key,
     this.userId,
+    this.showNavBar = true,
   });
 
   @override
@@ -129,11 +131,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
     ];
 
-    return VideoGridView(
+    final content = VideoGridView(
       selectedIndex: 2, // Profile is always index 2
       title: userData.username,
       showBackButton: widget.userId != null,
       userId: targetUserId,
+      showAppBar: widget.showNavBar,
       header: Container(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -174,6 +177,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
       tabs: tabs,
+    );
+
+    return widget.showNavBar ? content : Scaffold(
+      appBar: AppBar(
+        title: Text(userData.username),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: content,
     );
   }
 } 
