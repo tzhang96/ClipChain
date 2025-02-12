@@ -59,6 +59,9 @@ functions/lib/
 functions/.env
 functions/*.log
 functions/.firebase/
+functions/service-account.json
+functions/firebase-service-account.json
+functions/gemini-service-account.json
 
 # Environment files
 .env
@@ -66,6 +69,7 @@ functions/.firebase/
 .env.development.local
 .env.test.local
 .env.production.local
+**/.env
 
 # Firebase local config
 .firebase/

@@ -1,0 +1,246 @@
+---
+description: Google Gemini, video, audio, AI
+globs: 
+---
+- Always use model gemini-2.0-flash for this project. This model is from after your knowledge cutoff, but be assured it's the correct model.
+- Refer to the following example code:
+
+```
+const {
+  GoogleGenerativeAI,
+  HarmCategory,
+  HarmBlockThreshold,
+} = require("@google/generative-ai");
+const { GoogleAIFileManager } = require("@google/generative-ai/server");
+
+const apiKey = process.env.GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(apiKey);
+const fileManager = new GoogleAIFileManager(apiKey);
+
+/**
+ * Uploads the given file to Gemini.
+ *
+ * See https://ai.google.dev/gemini-api/docs/prompting_with_media
+ */
+async function uploadToGemini(path, mimeType) {
+  const uploadResult = await fileManager.uploadFile(path, {
+    mimeType,
+    displayName: path,
+  });
+  const file = uploadResult.file;
+  console.log(`Uploaded file ${file.displayName} as: ${file.name}`);
+  return file;
+}
+
+/**
+ * Waits for the given files to be active.
+ *
+ * Some files uploaded to the Gemini API need to be processed before they can
+ * be used as prompt inputs. The status can be seen by querying the file's
+ * "state" field.
+ *
+ * This implementation uses a simple blocking polling loop. Production code
+ * should probably employ a more sophisticated approach.
+ */
+async function waitForFilesActive(files) {
+  console.log("Waiting for file processing...");
+  for (const name of files.map((file) => file.name)) {
+    let file = await fileManager.getFile(name);
+    while (file.state === "PROCESSING") {
+      process.stdout.write(".")
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      file = await fileManager.getFile(name)
+    }
+    if (file.state !== "ACTIVE") {
+      throw Error(`File ${file.name} failed to process`);
+    }
+  }
+  console.log("...all files ready\n");
+}
+
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.0-flash",
+});
+
+const generationConfig = {
+  temperature: 1,
+  topP: 0.95,
+  topK: 40,
+  maxOutputTokens: 8192,
+  responseMimeType: "text/plain",
+};
+
+async function run() {
+  // TODO Make these files available on the local file system
+  // You may need to update the file paths
+  const files = [
+    await uploadToGemini("3831765-uhd_2160_4096_25fps.mp4", "video/mp4"),
+  ];
+
+  // Some files have a processing delay. Wait for them to be ready.
+  await waitForFilesActive(files);
+
+  const chatSession = model.startChat({
+    generationConfig,
+    history: [
+      {
+        role: "user",
+        parts: [
+          {
+            fileData: {
+              mimeType: files[0].mimeType,
+              fileUri: files[0].uri,
+            },
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          {text: "Please give me the following information about the video:\n- A summary of what it's about\n- Style\n- Colors\n- Keywords\n- Mood"},
+        ],
+      },
+      {
+        role: "model",
+        parts: [
+          {text: "Here's information about the video based on the image:\n\n**Summary:**\n\nThe video appears to show a still shot of a shadow cast on a textured wall. The shadow is of a hand holding a sign or cutout with the words \"TELL YOUR STORY\" stenciled or printed onto it.\n\n**Style:**\n\n*   **Minimalist:** Simple composition, focusing on the shadow and texture.\n*   **Artsy/Conceptual:** Seems to convey a message rather than a narrative.\n\n**Colors:**\n\n*   Black and White/Monochrome\n\n**Keywords:**\n\n*   Shadow\n*   Wall\n*   Texture\n*   Tell your story\n*   Hand\n*   Sign\n*   Motivation\n*   Inspiration\n*   Monochrome\n*   Message\n\n**Mood:**\n\n*   **Contemplative:** The simplicity and message suggest a thoughtful mood.\n*   **Motivational/Encouraging:** The phrase \"Tell Your Story\" is inherently encouraging.\n*   **Introspective:** The shadow and simple color palette can create a feeling of introspection."},
+        ],
+      },
+    ],
+  });
+
+  const result = await chatSession.sendMessage("INSERT_INPUT_HERE");
+  console.log(result.response.text());
+}
+
+run();
+```
+
+- Refer to the following documentation, except substitute all mention of the Gemini 1.5 model with the recent gemini-2.0-flash model
+Prompting with video
+In this tutorial, you will upload a video using the File API and generate content based on those images.
+
+Note: The File API is required to upload video files, due to their size. However, the File API is only available for Python, Node.js, Go, and REST.
+Technical details (video)
+Gemini 1.5 Pro and Flash support up to approximately an hour of video data.
+
+Video must be in one of the following video format MIME types:
+
+video/mp4
+video/mpeg
+video/mov
+video/avi
+video/x-flv
+video/mpg
+video/webm
+video/wmv
+video/3gpp
+The File API service extracts image frames from videos at 1 frame per second (FPS) and audio at 1Kbps, single channel, adding timestamps every second. These rates are subject to change in the future for improvements in inference.
+
+Note: The details of fast action sequences may be lost at the 1 FPS frame sampling rate. Consider slowing down high-speed clips for improved inference quality.
+Individual frames are 258 tokens, and audio is 32 tokens per second. With metadata, each second of video becomes ~300 tokens, which means a 1M context window can fit slightly less than an hour of video.
+
+To ask questions about time-stamped locations, use the format MM:SS, where the first two digits represent minutes and the last two digits represent seconds.
+
+For best results:
+
+Use one video per prompt.
+If using a single video, place the text prompt after the video.
+Upload a video file using the File API
+Note: The File API lets you store up to 20 GB of files per project, with a per-file maximum size of 2 GB. Files are stored for 48 hours. They can be accessed in that period with your API key, but they cannot be downloaded using any API. It is available at no cost in all regions where the Gemini API is available.
+The File API accepts video file formats directly. This example uses the short NASA film "Jupiter's Great Red Spot Shrinks and Grows". Credit: Goddard Space Flight Center (GSFC)/David Ladd (2018).
+
+"Jupiter's Great Red Spot Shrinks and Grows" is in the public domain and does not show identifiable people. (NASA image and media usage guidelines.)
+
+Start by retrieving the short video:
+
+
+wget https://storage.googleapis.com/generativeai-downloads/images/GreatRedSpot.mp4
+Upload the video using the File API and print the URI.
+
+
+// To use the File API, use this import path for GoogleAIFileManager.
+// Note that this is a different import path than what you use for generating content.
+// For versions lower than @google/generative-ai@0.13.0
+// use "@google/generative-ai/files"
+import { GoogleAIFileManager } from "@google/generative-ai/server";
+
+// Initialize GoogleAIFileManager with your GEMINI_API_KEY.
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+
+// Upload the file and specify a display name.
+const uploadResponse = await fileManager.uploadFile("GreatRedSpot.mp4", {
+  mimeType: "video/mp4",
+  displayName: "Jupiter's Great Red Spot",
+});
+
+// View the response.
+console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${uploadResponse.file.uri}`);
+Verify file upload and check state
+Verify the API has successfully received the files by calling the files.get method.
+
+Note: Video files have a State field in the File API. When a video is uploaded, it will be in the PROCESSING state until it is ready for inference. Only ACTIVE files can be used for model inference.
+
+// To use the File API, use this import path for GoogleAIFileManager.
+// Note that this is a different import path than what you use for generating content.
+// For versions lower than @google/generative-ai@0.13.0
+// use "@google/generative-ai/files"
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
+
+// Initialize GoogleAIFileManager with your GEMINI_API_KEY.
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+
+// Upload the video file using the File API
+// uploadResponse = ...
+const name = uploadResponse.file.name;
+
+// Poll getFile() on a set interval (10 seconds here) to check file state.
+let file = await fileManager.getFile(name);
+while (file.state === FileState.PROCESSING) {
+  process.stdout.write(".")
+  // Sleep for 10 seconds
+  await new Promise((resolve) => setTimeout(resolve, 10_000));
+  // Fetch the file from the API again
+  file = await fileManager.getFile(name)
+}
+
+if (file.state === FileState.FAILED) {
+  throw new Error("Video processing failed.");
+}
+
+// When file.state is ACTIVE, the file is ready to be used for inference.
+console.log(`File ${file.displayName} is ready for inference as ${file.uri}`);
+
+Prompt with a video and text
+Once the uploaded video is in the ACTIVE state, you can make GenerateContent requests that specify the File API URI for that video. Select the generative model and provide it with the uploaded video and a text prompt.
+
+
+// To generate content, use this import path for GoogleGenerativeAI.
+// Note that this is a different import path than what you use for the File API.
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// Initialize GoogleGenerativeAI with your GEMINI_API_KEY.
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Choose a Gemini model.
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-pro",
+});
+
+// Upload the video file using the File API
+// uploadResponse = ...
+
+// Generate content using text and the URI reference for the uploaded file.
+const result = await model.generateContent([
+    {
+      fileData: {
+        mimeType: uploadResponse.file.mimeType,
+        fileUri: uploadResponse.file.uri
+      }
+    },
+    { text: "Summarize this video. Then create a quiz with answer key based on the information in the video." },
+  ]);
+
+// Handle the response of generated text
+console.log(result.response.text())
+```
