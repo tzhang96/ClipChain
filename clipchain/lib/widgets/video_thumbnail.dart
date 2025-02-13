@@ -16,25 +16,67 @@ class VideoThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: video.thumbnailUrl != null
-        ? Image.network(
-            video.thumbnailUrl!,
-            fit: BoxFit.cover,
-            width: width,
-            height: double.infinity,
-          )
-        : Container(
-            color: Colors.black.withOpacity(0.1),
-            child: const Center(
-              child: Icon(Icons.video_library, size: 48),
-            ),
+    return Stack(
+      children: [
+        Container(
+          width: width,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
           ),
+          child: video.thumbnailUrl != null
+            ? Image.network(
+                video.thumbnailUrl!,
+                fit: BoxFit.cover,
+                width: width,
+                height: double.infinity,
+              )
+            : Container(
+                color: Colors.black.withOpacity(0.1),
+                child: const Center(
+                  child: Icon(Icons.video_library, size: 48),
+                ),
+              ),
+        ),
+        // Likes overlay
+        Positioned(
+          bottom: 8,
+          left: 8,
+          child: Consumer2<AuthProvider, LikesProvider>(
+            builder: (context, authProvider, likesProvider, _) {
+              final userId = authProvider.user?.uid;
+              final isLiked = userId != null && 
+                  likesProvider.isVideoLiked(userId, video.id);
+
+              return Row(
+                children: [
+                  Icon(
+                    isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: isLiked ? Colors.red : Colors.white,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${video.likes}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      shadows: [
+                        Shadow(
+                          blurRadius: 4,
+                          color: Colors.black,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 } 

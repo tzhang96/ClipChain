@@ -918,9 +918,9 @@ export const getChainRecommendations = functions.https.onCall({
       recommendations: recommendedVideoDocs
         .filter(doc => doc.exists)
         .map((doc, index) => ({
-          id: doc.id,
-          score: queryResponse.matches[index].score,
           ...doc.data(),
+          id: doc.id,  // Move id after spreading data to ensure it's not overridden
+          score: queryResponse.matches[index].score,
         })),
     };
 

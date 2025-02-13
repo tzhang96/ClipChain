@@ -104,16 +104,18 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
         SliverAppBar(
           expandedHeight: 200,
           pinned: true,
+          backgroundColor: Colors.transparent,
           automaticallyImplyLeading: false,
           flexibleSpace: FlexibleSpaceBar(
+            collapseMode: CollapseMode.pin,
             background: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.7),
-                    Colors.black.withOpacity(0.0),
+                    Colors.black.withOpacity(0.8),
+                    Colors.transparent,
                   ],
                 ),
               ),
@@ -146,11 +148,13 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                       // Creator info row
                       GestureDetector(
                         onTap: () {
-                          Navigator.of(context).pushAndRemoveUntil(
+                          Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => ProfileScreen(userId: widget.chain.userId),
+                              builder: (context) => ProfileScreen(
+                                userId: widget.chain.userId,
+                                showNavBar: true,
+                              ),
                             ),
-                            (route) => false,
                           );
                         },
                         child: Row(
@@ -248,7 +252,13 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                       ),
                     );
                   },
-                  child: VideoThumbnail(video: video),
+                  child: Stack(
+                    children: [
+                      VideoThumbnail(
+                        video: video,
+                      ),
+                    ],
+                  ),
                 );
               },
               childCount: videos.length,
@@ -284,56 +294,45 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                   final video = _recommendations![index];
                   print('ChainViewScreen: Building recommendation tile for video ${video.id}');
                   return GestureDetector(
-                    onTap: () async {
-                      print('ChainViewScreen: Tapped recommendation ${video.id}');
-                      // Add to chain
-                      try {
-                        print('ChainViewScreen: Adding video ${video.id} to chain ${widget.chain.id}');
-                        await chainProvider.addVideoToChain(
-                          widget.chain.id,
-                          video.id,
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Video added to chain!'),
+                    onTap: () {
+                      // Play recommendations as a feed
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => VideoFeedScreen(
+                            customVideos: _recommendations!,
+                            initialIndex: index,
+                            title: 'Recommended Videos',
+                            onHeaderTap: () {
+                              Navigator.of(context).pop();
+                            },
+                            headerBuilder: (context, onTap) => Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Recommended for "${widget.chain.title}"',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.grid_view,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ],
                             ),
-                          );
-                          print('ChainViewScreen: Successfully added video, refreshing recommendations');
-                          // Refresh recommendations
-                          _loadRecommendations();
-                        }
-                      } catch (e) {
-                        print('ChainViewScreen: Error adding video to chain: $e');
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error adding video: $e'),
-                            ),
-                          );
-                        }
-                      }
+                          ),
+                        ),
+                      );
                     },
                     child: Stack(
                       children: [
                         VideoThumbnail(
                           video: video,
-                        ),
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).primaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.add,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
                         ),
                       ],
                     ),
