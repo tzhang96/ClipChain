@@ -422,17 +422,18 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                                     );
                                                   }
                                                 } else {
-                                                  // Move to next video if available
+                                                  // Get current index before deletion
                                                   final currentIndex = _pageController.page?.round() ?? 0;
-                                                  if (currentIndex < _videos.length - 1) {
+                                                  // Clamp the index to ensure it's within bounds of the new list
+                                                  final newIndex = currentIndex.clamp(0, _videos.length - 1);
+                                                  
+                                                  // Initialize the video at the new index
+                                                  await _initializeVideo(newIndex);
+                                                  
+                                                  // Ensure we're showing the correct page
+                                                  if (currentIndex != newIndex) {
                                                     await _pageController.animateToPage(
-                                                      currentIndex + 1,
-                                                      duration: const Duration(milliseconds: 300),
-                                                      curve: Curves.easeInOut,
-                                                    );
-                                                  } else if (currentIndex > 0) {
-                                                    await _pageController.animateToPage(
-                                                      currentIndex - 1,
+                                                      newIndex,
                                                       duration: const Duration(milliseconds: 300),
                                                       curve: Curves.easeInOut,
                                                     );

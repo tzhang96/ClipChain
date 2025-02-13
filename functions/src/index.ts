@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager, FileState } from '@google/generative-ai/server';
 import * as nodeFetch from 'node-fetch';
+const Replicate = require('replicate');
 const fetch = nodeFetch.default;
 import * as fs from 'fs';
 import * as os from 'os';
@@ -11,6 +12,10 @@ import OpenAI from 'openai';
 import { Pinecone, RecordMetadata } from '@pinecone-database/pinecone';
 import { CallableRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
+import * as dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 // Define secrets
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
@@ -593,8 +598,6 @@ export const findSimilarVideos = functions.https.onCall({
   }
 
   try {
-    const config = functions.config();
-    // Initialize Pinecone inside the function
     const pineconeClient = new Pinecone({
       apiKey: pineconeApiKey.value(),
     });
@@ -645,5 +648,82 @@ export const findSimilarVideos = functions.https.onCall({
       'internal',
       'Failed to find similar videos'
     );
+  }
+});
+
+// Update video generation function to use env var
+export const generateVideo = functions.https.onCall({
+  timeoutSeconds: 540,  // 9 minutes timeout
+  memory: '256MiB',
+}, async (request: CallableRequest) => {
+  console.log('generateVideo: Function started');
+  console.log('generateVideo: Request data:', request.data);
+  console.log('generateVideo: Auth state:', request.auth ? 'authenticated' : 'not authenticated');
+
+  if (!request.auth) {
+    console.log('generateVideo: Authentication check failed');
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const { prompt, aspectRatio = '9:16' } = request.data as {
+    prompt: string;
+    aspectRatio?: string;
+  };
+
+  console.log('generateVideo: Extracted parameters:', { prompt, aspectRatio });
+
+  if (!prompt) {
+    console.log('generateVideo: Missing prompt');
+    throw new functions.https.HttpsError('invalid-argument', 'Prompt is required');
+  }
+
+  // Get API token from environment variables
+  const replicateApiToken = process.env.REPLICATE_API_TOKEN;
+  console.log('generateVideo: API token present:', !!replicateApiToken);
+  
+  if (!replicateApiToken) {
+    console.log('generateVideo: No API token found in environment');
+    throw new functions.https.HttpsError('failed-precondition', 'Replicate API token not configured');
+  }
+
+  try {
+    console.log('generateVideo: Starting video generation with Replicate...');
+    
+    // Initialize Replicate with the API token exactly as in the working example
+    const replicate = new Replicate({
+      auth: replicateApiToken,
+    });
+
+    console.log('generateVideo: Successfully initialized Replicate client');
+
+    // Make the API call using run method exactly as in the working example
+    console.log('generateVideo: About to call Replicate API with input:', { prompt, aspectRatio });
+    try {
+      const input = {
+        prompt: prompt,
+        aspect_ratio: aspectRatio
+      };
+
+      console.log("Generating video with Replicate...");
+      const output = await replicate.run("luma/ray", { input });
+      console.log("Received URL:", output);
+
+      if (!output) {
+        throw new functions.https.HttpsError('internal', 'No output received from video generation');
+      }
+
+      return { videoUrl: output };
+
+    } catch (replicateError) {
+      console.error('generateVideo: Replicate API error:', replicateError);
+      throw new functions.https.HttpsError('internal', `Replicate API error: ${replicateError instanceof Error ? replicateError.message : JSON.stringify(replicateError)}`);
+    }
+
+  } catch (error) {
+    console.error('generateVideo: Error occurred:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', 'Failed to generate video');
   }
 }); 

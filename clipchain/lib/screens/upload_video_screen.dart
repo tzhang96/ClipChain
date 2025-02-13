@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../providers/video_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/cloudinary_service.dart';
+import 'ai_video_screen.dart';
 
 class UploadVideoScreen extends StatefulWidget {
   const UploadVideoScreen({super.key});
@@ -44,6 +45,19 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
           _videoFileName = video.name;
         });
       }
+    }
+  }
+
+  Future<void> _generateAIVideo() async {
+    final videoId = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AIVideoScreen(),
+      ),
+    );
+
+    if (videoId != null && mounted) {
+      Navigator.pop(context, videoId);
     }
   }
 
@@ -123,10 +137,24 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ElevatedButton.icon(
-              onPressed: _isUploading ? null : _pickVideo,
-              icon: const Icon(Icons.video_library),
-              label: const Text('Select Video'),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isUploading ? null : _pickVideo,
+                    icon: const Icon(Icons.video_library),
+                    label: const Text('Select Video'),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isUploading ? null : _generateAIVideo,
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Generate AI Video'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             if (_videoFileName != null)

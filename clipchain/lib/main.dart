@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'firebase_options.dart';
 import 'providers/index.dart';
 import 'providers/chain_provider.dart';
@@ -19,29 +20,33 @@ import 'global.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize MediaKit
-  MediaKit.ensureInitialized();
-  
-  // Load environment variables
-  await dotenv.load();
-  
   try {
-    print('Initializing app...');
+    print('Loading environment variables...');
+    await dotenv.load(fileName: '.env');
+    print('Environment variables loaded. Available keys: ${dotenv.env.keys}');
+    
+    // Initialize MediaKit
+    MediaKit.ensureInitialized();
+    print('MediaKit initialized');
     
     // Initialize Firebase first
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
     print('Firebase initialized successfully');
+
+    // Configure Firebase Functions for production
+    final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+    print('Firebase Functions configured for us-central1');
     
     // Initialize Cloudinary
     await CloudinaryConfig.initialize();
     print('All services initialized successfully');
     
     runApp(const App());
-  } catch (e) {
+  } catch (e, stackTrace) {
     print('Error during app initialization: $e');
-    // You may want to show an error screen here instead of crashing
+    print('Stack trace: $stackTrace');
     rethrow;
   }
 }
