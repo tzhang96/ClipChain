@@ -254,13 +254,15 @@ class FirestorePaths {
 
 class VideoAnalysis {
   final String summary;
-  final List<String> colors;
+  final List<String> themes;
+  final Map<String, List<String>> visuals;
   final String style;
   final String mood;
   final Timestamp analyzedAt;
   final String? error;
   final String status;
   final int version;
+  final String? rawResponse;
 
   static const String STATUS_PENDING = 'pending';
   static const String STATUS_COMPLETED = 'completed';
@@ -268,54 +270,74 @@ class VideoAnalysis {
 
   const VideoAnalysis({
     required this.summary,
-    required this.colors,
+    required this.themes,
+    required this.visuals,
     required this.style,
     required this.mood,
     required this.analyzedAt,
     this.error,
     required this.status,
     required this.version,
+    this.rawResponse,
   });
 
   Map<String, dynamic> toMap() => {
     'summary': summary,
-    'colors': colors,
+    'themes': themes,
+    'visuals': visuals,
     'style': style,
     'mood': mood,
     'analyzedAt': analyzedAt,
     'error': error,
     'status': status,
     'version': version,
+    'rawResponse': rawResponse,
   };
 
-  factory VideoAnalysis.fromMap(Map<String, dynamic> map) => VideoAnalysis(
-    summary: map['summary'] as String? ?? '',
-    colors: List<String>.from(map['colors'] as List? ?? []),
-    style: map['style'] as String? ?? '',
-    mood: map['mood'] as String? ?? '',
-    analyzedAt: map['analyzedAt'] as Timestamp? ?? Timestamp.now(),
-    error: map['error'] as String?,
-    status: map['status'] as String? ?? STATUS_PENDING,
-    version: map['version'] as int? ?? 1,
-  );
+  factory VideoAnalysis.fromMap(Map<String, dynamic> map) {
+    Map<String, List<String>> parseVisuals(Map<String, dynamic>? visualsMap) {
+      if (visualsMap == null) return {'colors': [], 'elements': []};
+      return {
+        'colors': List<String>.from(visualsMap['colors'] as List? ?? []),
+        'elements': List<String>.from(visualsMap['elements'] as List? ?? []),
+      };
+    }
+
+    return VideoAnalysis(
+      summary: map['summary'] as String? ?? '',
+      themes: List<String>.from(map['themes'] as List? ?? []),
+      visuals: parseVisuals(map['visuals'] as Map<String, dynamic>?),
+      style: map['style'] as String? ?? '',
+      mood: map['mood'] as String? ?? '',
+      analyzedAt: map['analyzedAt'] as Timestamp? ?? Timestamp.now(),
+      error: map['error'] as String?,
+      status: map['status'] as String? ?? STATUS_PENDING,
+      version: map['version'] as int? ?? 1,
+      rawResponse: map['rawResponse'] as String?,
+    );
+  }
 
   VideoAnalysis copyWith({
     String? summary,
-    List<String>? colors,
+    List<String>? themes,
+    Map<String, List<String>>? visuals,
     String? style,
     String? mood,
     Timestamp? analyzedAt,
     String? error,
     String? status,
     int? version,
+    String? rawResponse,
   }) => VideoAnalysis(
     summary: summary ?? this.summary,
-    colors: colors ?? this.colors,
+    themes: themes ?? this.themes,
+    visuals: visuals ?? this.visuals,
     style: style ?? this.style,
     mood: mood ?? this.mood,
     analyzedAt: analyzedAt ?? this.analyzedAt,
     error: error ?? this.error,
     status: status ?? this.status,
     version: version ?? this.version,
+    rawResponse: rawResponse ?? this.rawResponse,
   );
 } 

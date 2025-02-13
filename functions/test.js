@@ -1,6 +1,29 @@
 const admin = require('firebase-admin');
 const functionsTest = require('firebase-functions-test');
 const fs = require('fs');
+const dotenv = require('dotenv');
+const path = require('path');
+
+// Load environment variables
+const envConfig = dotenv.config().parsed;
+
+if (!envConfig) {
+  console.error('Failed to load .env file');
+  process.exit(1);
+}
+
+// Set environment variables manually
+process.env.GEMINI_API_KEY = envConfig.GEMINI_API_KEY;
+process.env.OPENAI_API_KEY = envConfig.OPENAI_API_KEY;
+process.env.PINECONE_API_KEY = envConfig.PINECONE_API_KEY;
+process.env.PINECONE_INDEX = envConfig.PINECONE_INDEX;
+
+// Log environment variables (without exposing full keys)
+console.log('Environment variables loaded:');
+console.log('GEMINI_API_KEY:', envConfig.GEMINI_API_KEY ? `${envConfig.GEMINI_API_KEY.slice(0, 5)}...` : 'not set');
+console.log('OPENAI_API_KEY:', envConfig.OPENAI_API_KEY ? `${envConfig.OPENAI_API_KEY.slice(0, 5)}...` : 'not set');
+console.log('PINECONE_API_KEY:', envConfig.PINECONE_API_KEY ? `${envConfig.PINECONE_API_KEY.slice(0, 5)}...` : 'not set');
+console.log('PINECONE_INDEX:', envConfig.PINECONE_INDEX || 'not set');
 
 // Check if service account file exists
 const SERVICE_ACCOUNT_PATH = './service-account.json';
@@ -28,6 +51,12 @@ if (admin.apps.length === 0) {
 const test = functionsTest({
   projectId: serviceAccount.project_id,
 }, SERVICE_ACCOUNT_PATH);
+
+// Mock the parameter values
+test.mockParam('GEMINI_API_KEY', envConfig.GEMINI_API_KEY);
+test.mockParam('OPENAI_API_KEY', envConfig.OPENAI_API_KEY);
+test.mockParam('PINECONE_API_KEY', envConfig.PINECONE_API_KEY);
+test.mockParam('PINECONE_INDEX', envConfig.PINECONE_INDEX);
 
 // Timeout duration in milliseconds (5 minutes)
 const TIMEOUT_DURATION = 5 * 60 * 1000;
@@ -70,6 +99,14 @@ async function testReanalyze() {
         if (status === 'completed') {
           console.log('\n=== Analysis completed successfully ===');
           console.log('Final analysis data:', JSON.stringify(data.analysis, null, 2));
+          console.log('\nEmbedding status:', data.analysis.hasEmbeddings ? 'Generated' : 'Not generated');
+          if (data.analysis.hasEmbeddings) {
+            console.log('Embeddings have been generated and stored in Pinecone');
+            console.log('You can verify the embeddings in Pinecone by checking these IDs:');
+            console.log(`- ${videoDoc.id}_content (Content embedding)`);
+            console.log(`- ${videoDoc.id}_visual (Visual embedding)`);
+            console.log(`- ${videoDoc.id}_mood (Mood embedding)`);
+          }
           unsubscribe();
           resolve(data.analysis);
         } else if (status === 'failed') {

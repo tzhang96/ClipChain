@@ -2,29 +2,76 @@ import * as functions from 'firebase-functions/v2';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager, FileState } from '@google/generative-ai/server';
-import fetch = require('node-fetch');
+import * as nodeFetch from 'node-fetch';
+const fetch = nodeFetch.default;
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import OpenAI from 'openai';
+import { Pinecone, RecordMetadata } from '@pinecone-database/pinecone';
+import { CallableRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 
-// Initialize Firebase Admin only if not already initialized
-if (admin.apps.length === 0) {
-  admin.initializeApp();
+// Define secrets
+const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const openaiApiKey = defineSecret('OPENAI_API_KEY');
+const pineconeApiKey = defineSecret('PINECONE_API_KEY');
+const pineconeIndex = defineSecret('PINECONE_INDEX');
+
+interface PineconeMetadata extends RecordMetadata {
+  videoId: string;
+  type: 'content' | 'visual' | 'mood';
+  userId: string;
+  description: string;
+  createdAt: string; // Store timestamp as ISO string
 }
 
-// Initialize Gemini with API key
-const apiKey = process.env.GEMINI_API_KEY || '';
-const genAI = new GoogleGenerativeAI(apiKey);
-const fileManager = new GoogleAIFileManager(apiKey);
+interface VideoAnalysisResponse {
+  summary: string;
+  themes: string[];
+  visuals: {
+    colors: string[];
+    elements: string[];
+  };
+  style: string;
+  mood: string;
+  raw_response: string;
+}
 
+interface VideoEmbeddings {
+  contentEmbedding: number[];
+  visualEmbedding: number[];
+  moodEmbedding: number[];
+}
+
+// Remove top-level initializations
 interface VideoData {
+  id: string;
   userId: string;
   videoUrl: string;
-  thumbnailUrl: string;
-  description?: string;  // Make description optional
+  thumbnailUrl?: string;
+  description: string;
+  likes: number;
+  createdAt: admin.firestore.Timestamp;
+  analysis?: {
+    summary: string;
+    themes: string[];
+    visuals: {
+      colors: string[];
+      elements: string[];
+    };
+    style: string;
+    mood: string;
+    analyzedAt: admin.firestore.Timestamp;
+    error?: string;
+    status: 'pending' | 'completed' | 'failed';
+    version: number;
+    hasEmbeddings?: boolean;
+    rawResponse?: string;
+  };
 }
 
-async function waitForFileActive(file: any) {
+async function waitForFileActive(fileManager: GoogleAIFileManager, file: any) {
   console.log(`Waiting for file ${file.displayName} to be processed...`);
   let currentFile = await fileManager.getFile(file.name);
   while (currentFile.state === FileState.PROCESSING) {
@@ -40,11 +87,12 @@ async function waitForFileActive(file: any) {
   return currentFile;
 }
 
-async function analyzeWithGemini(videoUrl: string, thumbnailUrl: string, description: string = ''): Promise<any> {
+async function analyzeWithGemini(apiKey: string, videoUrl: string, thumbnailUrl: string, description: string = ''): Promise<VideoAnalysisResponse> {
   console.log('Starting video analysis with Gemini...');
-  console.log(`API Key length: ${apiKey.length}`);
-  console.log(`Video URL: ${videoUrl}`);
-  console.log(`Thumbnail URL: ${thumbnailUrl}`);
+  
+  // Initialize services inside the function
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const fileManager = new GoogleAIFileManager(apiKey);
 
   try {
     // Download video to temp file
@@ -62,29 +110,42 @@ async function analyzeWithGemini(videoUrl: string, thumbnailUrl: string, descrip
     console.log('Video uploaded to Gemini File API');
 
     // Wait for file to be processed
-    const processedFile = await waitForFileActive(uploadResult.file);
+    const processedFile = await waitForFileActive(fileManager, uploadResult.file);
     console.log('Video processing completed');
 
     // Initialize model with specific configuration
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
       generationConfig: {
-        temperature: 1,
-        topP: 0.95,
+        temperature: 0.7,
+        topP: 0.8,
         topK: 40,
         maxOutputTokens: 8192,
       },
     });
 
     // Build the analysis prompt
-    const prompt = `Please analyze this video and provide the following information:
-    1. A detailed summary of the content
-    2. Key themes and topics
-    3. Notable visual elements and colors
-    4. Overall mood, style, and tone
-    Additional context: ${description}`;
+    const prompt = `Analyze this video and provide a structured response in the following JSON format:
+{
+  "summary": "A concise 2-3 sentence description of the video content",
+  "themes": ["theme1", "theme2", "theme3"],
+  "visuals": {
+    "colors": ["color1", "color2", "color3"],
+    "elements": ["element1", "element2", "element3"]
+  },
+  "style": "Brief description of the visual style (e.g., minimalist, vibrant, vintage)",
+  "mood": "Brief description of the emotional tone (e.g., energetic, calm, dramatic)"
+}
 
-    // Use generateContent with the video file and text prompt in the correct order
+User-provided description of the video for additional context: ${description}
+
+Important:
+- Keep the summary brief and focused
+- List only the most prominent themes, colors, and elements (max 5 each)
+- Ensure the response is valid JSON
+- Do not include any text outside the JSON object`;
+
+    // Use generateContent with the video file and text prompt
     const result = await model.generateContent([
       {
         fileData: {
@@ -100,21 +161,168 @@ async function analyzeWithGemini(videoUrl: string, thumbnailUrl: string, descrip
     // Clean up temp file
     fs.unlinkSync(tempVideoPath);
 
-    return {
-      summary: result.response.text(),
-      raw_response: result.response.text(),
-    };
+    // Parse the response as JSON
+    const rawResponse = result.response.text();
+    console.log('Raw response:', rawResponse);
+
+    try {
+      // Extract JSON from the response (in case there's any extra text)
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No JSON object found in response');
+      }
+
+      const jsonStr = jsonMatch[0];
+      console.log('Extracted JSON:', jsonStr);
+
+      const parsedResponse = JSON.parse(jsonStr);
+
+      // Validate and normalize the response
+      const normalizedResponse: VideoAnalysisResponse = {
+        summary: String(parsedResponse.summary || ''),
+        themes: Array.isArray(parsedResponse.themes) ? parsedResponse.themes.map(String) : [],
+        visuals: {
+          colors: Array.isArray(parsedResponse.visuals?.colors) ? parsedResponse.visuals.colors.map(String) : [],
+          elements: Array.isArray(parsedResponse.visuals?.elements) ? parsedResponse.visuals.elements.map(String) : [],
+        },
+        style: String(parsedResponse.style || ''),
+        mood: String(parsedResponse.mood || ''),
+        raw_response: rawResponse,
+      };
+
+      console.log('Normalized response:', normalizedResponse);
+      return normalizedResponse;
+
+    } catch (parseError) {
+      console.error('Error parsing Gemini response as JSON:', parseError);
+      console.error('Raw response:', rawResponse);
+
+      // Return a structured error response
+      return {
+        summary: 'Failed to parse analysis results',
+        themes: [],
+        visuals: {
+          colors: [],
+          elements: [],
+        },
+        style: 'unknown',
+        mood: 'unknown',
+        raw_response: rawResponse,
+      };
+    }
   } catch (error) {
     console.error('Error in analyzeWithGemini:', error);
     throw error;
   }
 }
 
+async function generateEmbeddings(apiKey: string, analysis: VideoAnalysisResponse): Promise<VideoEmbeddings> {
+  // Initialize OpenAI inside the function
+  const openai = new OpenAI({ apiKey });
+
+  // Create a comprehensive content representation including all analysis elements
+  const contentText = [
+    analysis.summary,
+    `Themes: ${analysis.themes.join(', ')}`,
+    `Style: ${analysis.style}`,
+    `Mood: ${analysis.mood}`,
+    `Visual elements: ${analysis.visuals.elements.join(', ')}`,
+    `Colors: ${analysis.visuals.colors.join(', ')}`
+  ].join('\n');
+
+  // Keep visual and mood embeddings focused on their specific aspects
+  const visualText = `${analysis.style} ${analysis.visuals.colors.join(' ')} ${analysis.visuals.elements.join(' ')}`;
+  const moodText = analysis.mood;
+
+  // Generate embeddings in parallel
+  const [contentEmbed, visualEmbed, moodEmbed] = await Promise.all([
+    openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: contentText,
+    }),
+    openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: visualText,
+    }),
+    openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: moodText,
+    }),
+  ]);
+
+  return {
+    contentEmbedding: contentEmbed.data[0].embedding,
+    visualEmbedding: visualEmbed.data[0].embedding,
+    moodEmbedding: moodEmbed.data[0].embedding,
+  };
+}
+
+async function storeEmbeddings(
+  pineconeApiKeyValue: string,
+  pineconeIndexValue: string,
+  videoId: string, 
+  embeddings: VideoEmbeddings, 
+  metadata: {
+    userId: string;
+    description: string;
+    createdAt: string;
+  }
+) {
+  // Initialize Pinecone inside the function
+  const pinecone = new Pinecone({
+    apiKey: pineconeApiKeyValue,
+  });
+  
+  const index = pinecone.index(pineconeIndexValue);
+  
+  // Store embeddings with metadata
+  await index.upsert([
+    {
+      id: `${videoId}_content`,
+      values: embeddings.contentEmbedding,
+      metadata: {
+        videoId,
+        type: 'content',
+        ...metadata,
+      },
+    },
+    {
+      id: `${videoId}_visual`,
+      values: embeddings.visualEmbedding,
+      metadata: {
+        videoId,
+        type: 'visual',
+        ...metadata,
+      },
+    },
+    {
+      id: `${videoId}_mood`,
+      values: embeddings.moodEmbedding,
+      metadata: {
+        videoId,
+        type: 'mood',
+        ...metadata,
+      },
+    },
+  ]);
+}
+
 // Core analysis function shared between triggers
 async function performVideoAnalysis(
   videoRef: admin.firestore.DocumentReference,
-  video: VideoData
+  video: VideoData,
+  secrets: {
+    geminiApiKey: string;
+    openaiApiKey: string;
+    pineconeApiKey: string;
+    pineconeIndex: string;
+  }
 ) {
+  // Initialize Firebase Admin if not already initialized
+  if (admin.apps.length === 0) {
+    admin.initializeApp();
+  }
+
   const videoId = videoRef.id;
   console.log(`[DEBUG] Starting analysis for video ${videoId}`);
   console.log(`[DEBUG] Video data:`, JSON.stringify({
@@ -142,21 +350,38 @@ async function performVideoAnalysis(
     console.log(`[DEBUG] Starting Gemini API call`);
     console.log(`[DEBUG] Using model: gemini-2.0-flash`);
     
-    // Call Gemini API
-    const analysis = await analyzeWithGemini(video.videoUrl, video.thumbnailUrl, video.description || '');
+    // Call Gemini API with the API key
+    const analysis = await analyzeWithGemini(secrets.geminiApiKey, video.videoUrl, video.thumbnailUrl, video.description || '');
     console.log(`[DEBUG] Gemini API response:`, JSON.stringify(analysis));
 
-    console.log(`[DEBUG] Updating document with analysis results`);
+    // Generate embeddings with the OpenAI key
+    const embeddings = await generateEmbeddings(secrets.openaiApiKey, analysis);
+    
+    // Store embeddings with the Pinecone credentials
+    await storeEmbeddings(
+      secrets.pineconeApiKey,
+      secrets.pineconeIndex,
+      videoId,
+      embeddings,
+      {
+        userId: video.userId,
+        description: video.description || '',
+        createdAt: new Date().toISOString(),
+      }
+    );
+
+    // Update Firestore document with analysis results
     await videoRef.update({
       'analysis': {
         ...analysis,
         status: 'completed',
         analyzedAt: admin.firestore.FieldValue.serverTimestamp(),
-        version: 1
+        version: 1,
+        hasEmbeddings: true,
       }
     });
 
-    console.log(`[DEBUG] Successfully analyzed video ${videoId}`);
+    console.log(`[DEBUG] Successfully analyzed video and stored embeddings ${videoId}`);
     return { success: true, analysis };
 
   } catch (error) {
@@ -178,19 +403,30 @@ async function performVideoAnalysis(
 }
 
 // Cloud Function to analyze videos on creation
-export const analyzeVideo = functions.firestore.onDocumentCreated('videos/{videoId}', async (event) => {
-  const snapshot = event.data;
-  if (!snapshot) {
-    console.log('No data associated with the event');
-    return;
-  }
+export const analyzeVideo = functions.firestore
+  .onDocumentCreated({
+    document: 'videos/{videoId}',
+    secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+  }, async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+      console.log('No data associated with the event');
+      return;
+    }
 
-  const video = snapshot.data() as VideoData;
-  await performVideoAnalysis(snapshot.ref, video);
-});
+    const video = snapshot.data() as VideoData;
+    await performVideoAnalysis(snapshot.ref, video, {
+      geminiApiKey: geminiApiKey.value(),
+      openaiApiKey: openaiApiKey.value(),
+      pineconeApiKey: pineconeApiKey.value(),
+      pineconeIndex: pineconeIndex.value(),
+    });
+  });
 
 // Function to manually trigger analysis for a specific video
-export const reanalyzeVideo = functions.https.onCall(async (request: functions.https.CallableRequest) => {
+export const reanalyzeVideo = functions.https.onCall({
+  secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+}, async (request: functions.https.CallableRequest) => {
   console.log('[DEBUG] reanalyzeVideo called with request:', JSON.stringify({
     auth: request.auth,
     data: request.data
@@ -235,7 +471,12 @@ export const reanalyzeVideo = functions.https.onCall(async (request: functions.h
     }
 
     console.log('[DEBUG] Authorization successful, proceeding with analysis');
-    await performVideoAnalysis(videoRef, video);
+    await performVideoAnalysis(videoRef, video, {
+      geminiApiKey: geminiApiKey.value(),
+      openaiApiKey: openaiApiKey.value(),
+      pineconeApiKey: pineconeApiKey.value(),
+      pineconeIndex: pineconeIndex.value(),
+    });
     return { success: true };
   } catch (error) {
     console.error('[ERROR] Error in reanalyzeVideo:', error);
@@ -247,26 +488,71 @@ export const reanalyzeVideo = functions.https.onCall(async (request: functions.h
 });
 
 // Function to batch analyze videos
-export const batchAnalyzeVideos = functions.https.onRequest(async (req, res) => {
+export const batchAnalyzeVideos = functions.https.onRequest({
+  secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+}, async (req, res) => {
   try {
     const batchSize = 50;
-    const query = admin.firestore()
+    
+    // Get videos that need analysis
+    const snapshot = await admin.firestore()
       .collection('videos')
-      .where('analysis', '==', null)
-      .limit(batchSize);
+      .where('analysis', 'in', [null, undefined]) // Missing analysis
+      .orderBy('createdAt', 'desc')
+      .limit(batchSize)
+      .get();
 
-    const snapshot = await query.get();
-    console.log(`Found ${snapshot.size} videos to analyze`);
+    // Get videos with failed analysis
+    const failedSnapshot = await admin.firestore()
+      .collection('videos')
+      .where('analysis.status', '==', 'failed')
+      .orderBy('createdAt', 'desc')
+      .limit(batchSize)
+      .get();
 
-    const tasks = snapshot.docs.map(async (doc) => {
+    // Get videos with potentially malformed analysis
+    const malformedSnapshot = await admin.firestore()
+      .collection('videos')
+      .where('analysis.status', '==', 'completed')
+      .where('analysis.hasEmbeddings', '==', false)
+      .orderBy('createdAt', 'desc')
+      .limit(batchSize)
+      .get();
+
+    // Combine all videos that need processing
+    const videosToAnalyze = [
+      ...snapshot.docs,
+      ...failedSnapshot.docs,
+      ...malformedSnapshot.docs
+    ].slice(0, batchSize); // Ensure we don't exceed batch size
+
+    console.log(`Found videos requiring analysis:
+      - ${snapshot.size} missing analysis
+      - ${failedSnapshot.size} failed analysis
+      - ${malformedSnapshot.size} malformed/incomplete analysis
+      Total to process: ${videosToAnalyze.length}`);
+
+    const secrets = {
+      geminiApiKey: geminiApiKey.value(),
+      openaiApiKey: openaiApiKey.value(),
+      pineconeApiKey: pineconeApiKey.value(),
+      pineconeIndex: pineconeIndex.value(),
+    };
+
+    const tasks = videosToAnalyze.map(async (doc) => {
       const video = doc.data() as VideoData;
       try {
-        await performVideoAnalysis(doc.ref, video);
-        return { id: doc.id, success: true };
+        await performVideoAnalysis(doc.ref, video, secrets);
+        return { 
+          id: doc.id, 
+          success: true,
+          previousStatus: video.analysis?.status || 'missing' 
+        };
       } catch (error) {
         return { 
           id: doc.id, 
           success: false, 
+          previousStatus: video.analysis?.status || 'missing',
           error: error instanceof Error ? error.message : 'Unknown error' 
         };
       }
@@ -274,7 +560,13 @@ export const batchAnalyzeVideos = functions.https.onRequest(async (req, res) => 
 
     const results = await Promise.all(tasks);
     res.json({
-      processed: snapshot.size,
+      summary: {
+        total_checked: snapshot.size + failedSnapshot.size + malformedSnapshot.size,
+        missing_analysis: snapshot.size,
+        failed_analysis: failedSnapshot.size,
+        malformed_analysis: malformedSnapshot.size,
+        processed: videosToAnalyze.length
+      },
       results
     });
 
@@ -283,5 +575,75 @@ export const batchAnalyzeVideos = functions.https.onRequest(async (req, res) => 
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
+});
+
+// Add a new function for finding similar videos
+export const findSimilarVideos = functions.https.onCall({
+  secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+}, async (request: CallableRequest) => {
+  const { videoId, type = 'content', limit = 10 } = request.data as {
+    videoId: string;
+    type?: 'content' | 'visual' | 'mood';
+    limit?: number;
+  };
+
+  if (!request.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  try {
+    const config = functions.config();
+    // Initialize Pinecone inside the function
+    const pineconeClient = new Pinecone({
+      apiKey: pineconeApiKey.value(),
+    });
+
+    const index = pineconeClient.index(pineconeIndex.value());
+
+    // First, get the vector for the target video
+    const targetVector = await index.fetch([`${videoId}_${type}`]);
+    if (!targetVector.records[`${videoId}_${type}`]) {
+      throw new functions.https.HttpsError('failed-precondition', 'Video embeddings not found');
+    }
+
+    // Query Pinecone for similar videos
+    const queryResponse = await index.query({
+      vector: targetVector.records[`${videoId}_${type}`].values,
+      filter: {
+        type: type
+      },
+      topK: limit,
+      includeMetadata: true,
+    });
+
+    // Get unique video IDs from results
+    const similarVideoIds = [...new Set(
+      queryResponse.matches
+        .map(match => (match.metadata as PineconeMetadata)?.videoId)
+        .filter((id): id is string => id !== undefined && id !== videoId)
+    )];
+
+    // Fetch video details from Firestore
+    const videoDocs = await Promise.all(
+      similarVideoIds.map(id => 
+        admin.firestore().collection('videos').doc(id).get()
+      )
+    );
+
+    return {
+      videos: videoDocs
+        .filter(doc => doc.exists)
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })),
+    };
+  } catch (error) {
+    console.error('[ERROR] Error finding similar videos:', error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Failed to find similar videos'
+    );
   }
 }); 
