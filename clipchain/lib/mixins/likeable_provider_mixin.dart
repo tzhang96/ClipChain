@@ -16,6 +16,9 @@ mixin LikeableProviderMixin<T extends LikeableDocument> on ChangeNotifier {
   // Cache of liked item IDs for each user
   final Map<String, Set<String>> _userLikes = {}; // userId -> Set of itemIds
   
+  // Set to track ongoing like operations
+  final Set<String> _pendingLikes = {};
+  
   // Loading states
   bool _isLoadingLikes = false;
   String? _likesError;
@@ -28,7 +31,7 @@ mixin LikeableProviderMixin<T extends LikeableDocument> on ChangeNotifier {
   String get documentsCollectionPath;
   T Function(Map<String, dynamic> data) get fromMap;
   void updateItemInCache(T item);
-  String get likeableIdField;  // New abstract getter for the ID field name
+  String get likeableIdField;
 
   /// Check if an item is liked by a user
   bool isItemLiked(String userId, String itemId) {
@@ -98,88 +101,122 @@ mixin LikeableProviderMixin<T extends LikeableDocument> on ChangeNotifier {
     }
   }
 
-  /// Toggle like status for an item
+  /// Toggle like status for an item with optimistic updates
   Future<void> toggleLike(String userId, String itemId) async {
-    try {
-      Future.microtask(() {
-        _isLoadingLikes = true;
-        _likesError = null;
-        notifyListeners();
-      });
+    // Check if there's already a pending operation for this item
+    final operationKey = '$userId:$itemId';
+    if (_pendingLikes.contains(operationKey)) {
+      return;
+    }
+    _pendingLikes.add(operationKey);
 
+    try {
       final isLiked = isItemLiked(userId, itemId);
       
-      if (isLiked) {
-        // Unlike
-        await _firestore
-            .collection(likesCollectionPath)
-            .where('userId', isEqualTo: userId)
-            .where(likeableIdField, isEqualTo: itemId)
-            .get()
-            .then((snapshot) {
-          return Future.wait(
-            snapshot.docs.map((doc) => doc.reference.delete()),
-          );
-        });
-
-        // Update likes count
-        await _firestore
-            .collection(documentsCollectionPath)
-            .doc(itemId)
-            .update({'likes': FieldValue.increment(-1)});
-
-      } else {
-        // Like
-        await _firestore
-            .collection(likesCollectionPath)
-            .add({
-              'userId': userId,
-              likeableIdField: itemId,
-              'createdAt': Timestamp.now(),
-            });
-
-        // Update likes count
-        await _firestore
-            .collection(documentsCollectionPath)
-            .doc(itemId)
-            .update({'likes': FieldValue.increment(1)});
-      }
-
-      // Fetch updated item
-      final updatedDoc = await _firestore
+      // Get the current item from Firestore
+      final itemDoc = await _firestore
           .collection(documentsCollectionPath)
           .doc(itemId)
           .get();
-
-      if (updatedDoc.exists) {
-        final data = updatedDoc.data()!;
-        data['id'] = updatedDoc.id;
-        final updatedItem = fromMap(data);
-        updateItemInCache(updatedItem);
+      
+      if (!itemDoc.exists) {
+        throw Exception('Item not found');
       }
 
-      // Update local cache
+      final currentData = itemDoc.data()!;
+      currentData['id'] = itemDoc.id;
+      final currentItem = fromMap(currentData);
+      
+      // Optimistically update local state
       Future.microtask(() {
         if (isLiked) {
           _userLikes[userId]?.remove(itemId);
+          updateItemInCache(
+            fromMap({
+              ...currentData,
+              'likes': currentItem.likes - 1,
+            }),
+          );
         } else {
           _userLikes.putIfAbsent(userId, () => {}).add(itemId);
+          updateItemInCache(
+            fromMap({
+              ...currentData,
+              'likes': currentItem.likes + 1,
+            }),
+          );
         }
-        _isLoadingLikes = false;
         notifyListeners();
       });
 
+      // Perform backend update
+      if (isLiked) {
+        // Unlike
+        final likeDocs = await _firestore
+            .collection(likesCollectionPath)
+            .where('userId', isEqualTo: userId)
+            .where(likeableIdField, isEqualTo: itemId)
+            .get();
+            
+        await Future.wait([
+          Future.wait(likeDocs.docs.map((doc) => doc.reference.delete())),
+          _firestore
+              .collection(documentsCollectionPath)
+              .doc(itemId)
+              .update({'likes': FieldValue.increment(-1)}),
+        ]);
+      } else {
+        // Like
+        await Future.wait([
+          _firestore
+              .collection(likesCollectionPath)
+              .add({
+                'userId': userId,
+                likeableIdField: itemId,
+                'createdAt': Timestamp.now(),
+              }),
+          _firestore
+              .collection(documentsCollectionPath)
+              .doc(itemId)
+              .update({'likes': FieldValue.increment(1)}),
+        ]);
+      }
+
     } catch (e) {
-      Future.microtask(() {
-        _likesError = 'Failed to toggle like: $e';
-        _isLoadingLikes = false;
-        notifyListeners();
-      });
+      print('Error toggling like: $e');
+      
+      // Revert optimistic update on error
+      final isLiked = isItemLiked(userId, itemId);
+      
+      // Get the current item state from Firestore
+      final itemDoc = await _firestore
+          .collection(documentsCollectionPath)
+          .doc(itemId)
+          .get();
+          
+      if (itemDoc.exists) {
+        final data = itemDoc.data()!;
+        data['id'] = itemDoc.id;
+        
+        Future.microtask(() {
+          if (isLiked) {
+            _userLikes[userId]?.add(itemId);
+          } else {
+            _userLikes[userId]?.remove(itemId);
+          }
+          updateItemInCache(fromMap(data));
+          _likesError = 'Failed to update like status';
+          notifyListeners();
+        });
+      }
+    } finally {
+      _pendingLikes.remove(operationKey);
     }
   }
 
   void clearLikes() {
     _userLikes.clear();
+    _pendingLikes.clear();
     _isLoadingLikes = false;
     _likesError = null;
     notifyListeners();
