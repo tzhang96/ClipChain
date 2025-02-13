@@ -195,6 +195,7 @@ Important:
       console.log('Extracted JSON:', jsonStr);
 
       const parsedResponse = JSON.parse(jsonStr);
+      console.log('Parsed response:', parsedResponse);
 
       // Validate and normalize the response
       const normalizedResponse: VideoAnalysisResponse = {
@@ -204,12 +205,17 @@ Important:
           colors: Array.isArray(parsedResponse.visuals?.colors) ? parsedResponse.visuals.colors.map(String) : [],
           elements: Array.isArray(parsedResponse.visuals?.elements) ? parsedResponse.visuals.elements.map(String) : [],
         },
-        style: String(parsedResponse.style || ''),
-        mood: String(parsedResponse.mood || ''),
+        style: String(parsedResponse.style || '').trim(),
+        mood: String(parsedResponse.mood || '').trim(),
         raw_response: rawResponse,
       };
 
-      console.log('Normalized response:', normalizedResponse);
+      // Log the extracted fields for debugging
+      console.log('Normalized fields:', {
+        style: normalizedResponse.style,
+        mood: normalizedResponse.mood
+      });
+
       return normalizedResponse;
 
     } catch (parseError) {
@@ -407,15 +413,27 @@ async function performVideoAnalysis(
     // Update Firestore document with analysis results
     await videoRef.update({
       'analysis': {
-        ...analysis,
+        summary: analysis.summary,
+        themes: analysis.themes,
+        visuals: analysis.visuals,
+        style: analysis.style,
+        mood: analysis.mood,
         status: 'completed',
         analyzedAt: admin.firestore.FieldValue.serverTimestamp(),
         version: 1,
         hasEmbeddings: true,
+        raw_response: analysis.raw_response,
       }
     });
 
     console.log(`[DEBUG] Successfully analyzed video and stored embeddings ${videoId}`);
+    console.log('[DEBUG] Analysis results:', {
+      summary: analysis.summary,
+      themes: analysis.themes,
+      style: analysis.style,
+      mood: analysis.mood,
+      hasEmbeddings: true
+    });
     return { success: true, analysis };
 
   } catch (error) {
@@ -765,4 +783,40 @@ export const generateVideo = functions.https.onCall({
     }
     throw new functions.https.HttpsError('internal', 'Failed to generate video');
   }
+});
+
+// Add a function to clean up video data when a video is deleted
+export const onVideoDeleted = functions.firestore
+  .onDocumentDeleted({
+    document: 'videos/{videoId}',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  }, async (event) => {
+    const videoId = event.params.videoId;
+    console.log(`Cleaning up data for deleted video: ${videoId}`);
+
+    try {
+      // Initialize Pinecone
+      const pinecone = new Pinecone({
+        apiKey: process.env.PINECONE_API_KEY!,
+      });
+
+      const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+      // Delete all embeddings for this video
+      const embeddings = [
+        `${videoId}_content`,
+        `${videoId}_visual`,
+        `${videoId}_mood`
+      ];
+
+      console.log(`Deleting embeddings: ${embeddings.join(', ')}`);
+      await index.deleteMany(embeddings);
+      
+      console.log(`Successfully cleaned up embeddings for video ${videoId}`);
+    } catch (error) {
+      console.error(`Error cleaning up data for video ${videoId}:`, error);
+      // Don't throw the error as the video is already deleted
+      // Just log it for monitoring
+    }
 }); 
