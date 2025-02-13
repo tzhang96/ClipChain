@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../types/firestore_types.dart';
 import '../mixins/likeable_provider_mixin.dart';
 
@@ -90,7 +91,10 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
     if (!_chains.any((c) => c.id == chain.id)) {
       _chains = [chain, ..._chains];
       print('ChainProvider: Chain added to main cache');
-      notifyListeners();
+      // Schedule the notification for the next frame
+      Future.microtask(() {
+        notifyListeners();
+      });
     } else {
       print('ChainProvider: Chain already in main cache');
     }
@@ -398,6 +402,138 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
       notifyListeners();
     } catch (e) {
       print('ChainProvider: Error removing video from chains: $e');
+      rethrow;
+    }
+  }
+
+  /// Get recommendations for a chain
+  Future<List<VideoDocument>> getRecommendations(ChainDocument chain) async {
+    try {
+      print('ChainProvider: Getting recommendations for chain ${chain.id}');
+      print('ChainProvider: Chain details - title: ${chain.title}, videoCount: ${chain.videoIds.length}');
+      
+      // Add chain to cache if not already there
+      addToMainCache(chain);
+      
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('getChainRecommendations');
+      
+      final params = {
+        'chainId': chain.id,
+        'chainName': chain.title,
+        'chainDescription': chain.description,
+        'videoIds': chain.videoIds,
+      };
+      print('ChainProvider: Calling Cloud Function with params: $params');
+      
+      final result = await callable.call(params);
+      
+      print('ChainProvider: Received raw response: ${result.data}');
+      
+      if (result.data == null) {
+        print('ChainProvider: Received null response from Cloud Function');
+        return [];
+      }
+
+      if (result.data['recommendations'] == null) {
+        print('ChainProvider: No recommendations in response');
+        return [];
+      }
+      
+      final recommendations = (result.data['recommendations'] as List).map((item) {
+        print('ChainProvider: Processing recommendation item: $item');
+        
+        final videoData = item as Map<String, dynamic>;
+        print('ChainProvider: Video data: $videoData');
+        
+        // Convert Timestamp data
+        final createdAtData = videoData['createdAt'] as Map<String, dynamic>;
+        final createdAt = Timestamp(
+          createdAtData['_seconds'] as int,
+          createdAtData['_nanoseconds'] as int,
+        );
+
+        // Create VideoAnalysis object if analysis exists
+        VideoAnalysis? analysis;
+        if (videoData['analysis'] != null) {
+          final analysisData = videoData['analysis'] as Map<String, dynamic>;
+          final analyzedAtData = analysisData['analyzedAt'] as Map<String, dynamic>;
+          final analyzedAt = Timestamp(
+            analyzedAtData['_seconds'] as int,
+            analyzedAtData['_nanoseconds'] as int,
+          );
+
+          analysis = VideoAnalysis(
+            summary: analysisData['summary'] as String,
+            themes: List<String>.from(analysisData['themes'] as List),
+            visuals: Map<String, List<String>>.from(
+              (analysisData['visuals'] as Map<String, dynamic>).map(
+                (key, value) => MapEntry(key, List<String>.from(value as List))
+              )
+            ),
+            style: analysisData['style'] as String,
+            mood: analysisData['mood'] as String,
+            analyzedAt: analyzedAt,
+            error: analysisData['error'] as String?,
+            status: analysisData['status'] as String,
+            version: analysisData['version'] as int,
+            rawResponse: analysisData['rawResponse'] as String?,
+          );
+        }
+
+        return VideoDocument(
+          id: videoData['id'] as String,
+          userId: videoData['userId'] as String,
+          videoUrl: videoData['videoUrl'] as String,
+          thumbnailUrl: videoData['thumbnailUrl'] as String?,
+          description: videoData['description'] as String,
+          likes: videoData['likes'] as int,
+          createdAt: createdAt,
+          analysis: analysis,
+        );
+      }).toList();
+
+      print('ChainProvider: Successfully processed ${recommendations.length} recommendations');
+      for (final video in recommendations) {
+        print('ChainProvider: Recommendation - id: ${video.id}, title: ${video.description}');
+      }
+
+      return recommendations;
+    } catch (e, stackTrace) {
+      print('ChainProvider: Error getting recommendations: $e');
+      print('ChainProvider: Stack trace:\n$stackTrace');
+      return [];
+    }
+  }
+
+  /// Add a video to a chain
+  Future<void> addVideoToChain(String chainId, String videoId) async {
+    try {
+      final chainRef = _firestore.collection('chains').doc(chainId);
+      await chainRef.update({
+        'videoIds': FieldValue.arrayUnion([videoId]),
+        'updatedAt': Timestamp.now(),
+      });
+      
+      // Update local state
+      final index = _chains.indexWhere((chain) => chain.id == chainId);
+      if (index != -1) {
+        final chain = _chains[index];
+        final updatedChain = ChainDocument(
+          id: chain.id,
+          userId: chain.userId,
+          title: chain.title,
+          description: chain.description,
+          likes: chain.likes,
+          videoIds: [...chain.videoIds, videoId],
+          createdAt: chain.createdAt,
+          updatedAt: Timestamp.now(),
+        );
+        _chains[index] = updatedChain;
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error adding video to chain: $e');
       rethrow;
     }
   }

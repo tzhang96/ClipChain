@@ -12,7 +12,7 @@ import 'profile_screen.dart';
 import 'video_feed_screen.dart';
 import '../widgets/authenticated_view.dart';
 
-class ChainViewScreen extends StatelessWidget {
+class ChainViewScreen extends StatefulWidget {
   final ChainDocument chain;
 
   const ChainViewScreen({
@@ -21,23 +21,82 @@ class ChainViewScreen extends StatelessWidget {
   });
 
   @override
+  State<ChainViewScreen> createState() => _ChainViewScreenState();
+}
+
+class _ChainViewScreenState extends State<ChainViewScreen> {
+  List<VideoDocument>? _recommendations;
+  bool _loadingRecommendations = false;
+
+  @override
+  void initState() {
+    super.initState();
+    print('ChainViewScreen: Initializing for chain ${widget.chain.id}');
+    _loadRecommendations();
+  }
+
+  Future<void> _loadRecommendations() async {
+    if (_loadingRecommendations) {
+      print('ChainViewScreen: Already loading recommendations, skipping');
+      return;
+    }
+    
+    print('ChainViewScreen: Starting to load recommendations');
+    setState(() {
+      _loadingRecommendations = true;
+    });
+
+    try {
+      print('ChainViewScreen: Calling getRecommendations');
+      final recommendations = await context.read<ChainProvider>()
+        .getRecommendations(widget.chain);
+      
+      print('ChainViewScreen: Received ${recommendations.length} recommendations');
+      
+      if (mounted) {
+        setState(() {
+          _recommendations = recommendations;
+          _loadingRecommendations = false;
+        });
+        print('ChainViewScreen: Updated state with recommendations');
+      } else {
+        print('ChainViewScreen: Widget no longer mounted, skipping state update');
+      }
+    } catch (e, stackTrace) {
+      print('ChainViewScreen: Error loading recommendations: $e');
+      print('ChainViewScreen: Stack trace:\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _loadingRecommendations = false;
+        });
+        print('ChainViewScreen: Updated state to reflect error');
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    print('ChainViewScreen: Building UI');
+    print('ChainViewScreen: Recommendations state - loading: $_loadingRecommendations, count: ${_recommendations?.length ?? 0}');
+    
     final videoProvider = context.watch<VideoProvider>();
     final userProvider = context.watch<UserProvider>();
     final chainProvider = context.watch<ChainProvider>();
-    final user = userProvider.getUser(chain.userId);
+    final user = userProvider.getUser(widget.chain.userId);
     
     // Fetch user data if not available
-    if (user == null && !userProvider.isLoading(chain.userId)) {
-      userProvider.fetchUser(chain.userId);
+    if (user == null && !userProvider.isLoading(widget.chain.userId)) {
+      userProvider.fetchUser(widget.chain.userId);
     }
 
     // Get all videos in the chain
-    final videos = chain.videoIds
+    final videos = widget.chain.videoIds
         .map((id) => videoProvider.getVideoById(id))
         .where((video) => video != null)
         .map((video) => video!)
         .toList();
+    
+    print('ChainViewScreen: Chain videos count: ${videos.length}');
 
     final content = CustomScrollView(
       slivers: [
@@ -66,17 +125,17 @@ class ChainViewScreen extends StatelessWidget {
                     children: [
                       const SizedBox(height: 40),
                       Text(
-                        chain.title,
+                        widget.chain.title,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      if (chain.description != null) ...[
+                      if (widget.chain.description != null) ...[
                         const SizedBox(height: 8),
                         Text(
-                          chain.description!,
+                          widget.chain.description!,
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 16,
@@ -89,7 +148,7 @@ class ChainViewScreen extends StatelessWidget {
                         onTap: () {
                           Navigator.of(context).pushAndRemoveUntil(
                             MaterialPageRoute(
-                              builder: (context) => ProfileScreen(userId: chain.userId),
+                              builder: (context) => ProfileScreen(userId: widget.chain.userId),
                             ),
                             (route) => false,
                           );
@@ -121,15 +180,15 @@ class ChainViewScreen extends StatelessWidget {
                               builder: (context, authProvider, chainProvider, _) {
                                 final userId = authProvider.user?.uid;
                                 final isLiked = userId != null && 
-                                    chainProvider.isItemLiked(userId, chain.id);
-                                final liveChain = chainProvider.getChainById(chain.id) ?? chain;
+                                    chainProvider.isItemLiked(userId, widget.chain.id);
+                                final liveChain = chainProvider.getChainById(widget.chain.id) ?? widget.chain;
 
                                 return Row(
                                   children: [
                                     GestureDetector(
                                       onTap: () {
                                         if (userId != null) {
-                                          chainProvider.toggleLike(userId, chain.id);
+                                          chainProvider.toggleLike(userId, widget.chain.id);
                                         }
                                       },
                                       child: Icon(
@@ -181,7 +240,7 @@ class ChainViewScreen extends StatelessWidget {
                         builder: (context) => VideoFeedScreen(
                           customVideos: videos,
                           initialIndex: index,
-                          title: chain.title,
+                          title: widget.chain.title,
                           onHeaderTap: () {
                             Navigator.of(context).pop();
                           },
@@ -196,11 +255,109 @@ class ChainViewScreen extends StatelessWidget {
             ),
           ),
         ),
+
+        // Recommendations Section
+        if (_recommendations != null && _recommendations!.isNotEmpty) ...[
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'Recommended Videos',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.all(8.0),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 9 / 16,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final video = _recommendations![index];
+                  print('ChainViewScreen: Building recommendation tile for video ${video.id}');
+                  return GestureDetector(
+                    onTap: () async {
+                      print('ChainViewScreen: Tapped recommendation ${video.id}');
+                      // Add to chain
+                      try {
+                        print('ChainViewScreen: Adding video ${video.id} to chain ${widget.chain.id}');
+                        await chainProvider.addVideoToChain(
+                          widget.chain.id,
+                          video.id,
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Video added to chain!'),
+                            ),
+                          );
+                          print('ChainViewScreen: Successfully added video, refreshing recommendations');
+                          // Refresh recommendations
+                          _loadRecommendations();
+                        }
+                      } catch (e) {
+                        print('ChainViewScreen: Error adding video to chain: $e');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error adding video: $e'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    child: Stack(
+                      children: [
+                        VideoThumbnail(
+                          video: video,
+                        ),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.add,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                childCount: _recommendations!.length,
+              ),
+            ),
+          ),
+        ] else if (_loadingRecommendations) ...[
+          const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ),
+        ],
       ],
     );
 
     return AuthenticatedView(
-      selectedIndex: 0,  // We can treat this as part of the feed section
+      selectedIndex: 0,
       body: content,
     );
   }

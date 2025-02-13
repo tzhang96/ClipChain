@@ -14,6 +14,16 @@ import { CallableRequest } from 'firebase-functions/v2/https';
 import * as dotenv from 'dotenv';
 import * as cors from 'cors';
 
+// Initialize Firebase Admin with explicit configuration
+try {
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+  });
+  console.log('Firebase Admin initialized successfully');
+} catch (error) {
+  console.error('Error initializing Firebase Admin:', error);
+}
+
 // Load environment variables
 dotenv.config();
 
@@ -819,4 +829,106 @@ export const onVideoDeleted = functions.firestore
       // Don't throw the error as the video is already deleted
       // Just log it for monitoring
     }
+});
+
+// Add a new function for getting chain recommendations
+export const getChainRecommendations = functions.https.onCall({
+  timeoutSeconds: 60,
+  memory: '256MiB',
+}, async (request: CallableRequest) => {
+  if (!request.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const { chainId, chainName, chainDescription, videoIds } = request.data as {
+    chainId: string;
+    chainName: string;
+    chainDescription: string;
+    videoIds: string[];
+  };
+
+  if (!chainId || !chainName || !videoIds) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing required chain data');
+  }
+
+  try {
+    // Initialize OpenAI
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+    
+    // Initialize Pinecone
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!,
+    });
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+    // 1. Get video data for existing chain videos
+    const videoDocs = await Promise.all(
+      videoIds.map(id => admin.firestore().collection('videos').doc(id).get())
+    );
+
+    // 2. Create a combined text representation of the chain
+    const chainText = [
+      `Chain Name: ${chainName}`,
+      chainDescription ? `Chain Description: ${chainDescription}` : '',
+      'Videos in chain:',
+      ...videoDocs
+        .filter(doc => doc.exists)
+        .map(doc => {
+          const data = doc.data() as VideoData;
+          return [
+            data.description,
+            data.analysis?.summary,
+            data.analysis?.themes?.join(', '),
+            data.analysis?.style,
+            data.analysis?.mood,
+          ].filter(Boolean).join(' ');
+        })
+    ].join('\n');
+
+    console.log('Generated chain text for embedding:', chainText);
+
+    // 3. Generate embedding for the chain
+    const chainEmbedding = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: chainText,
+    });
+
+    // 4. Query Pinecone for similar videos
+    // We'll query against content embeddings as they contain the most comprehensive information
+    const queryResponse = await index.query({
+      vector: chainEmbedding.data[0].embedding,
+      filter: {
+        type: 'content',
+        videoId: { $nin: videoIds } // Exclude videos already in the chain
+      },
+      topK: 3,
+      includeMetadata: true,
+    });
+
+    // 5. Get full video details from Firestore
+    const recommendedVideoDocs = await Promise.all(
+      queryResponse.matches
+        .map(match => (match.metadata as PineconeMetadata)?.videoId)
+        .filter((id): id is string => id !== undefined)
+        .map(id => admin.firestore().collection('videos').doc(id).get())
+    );
+
+    // 6. Return recommended videos with scores
+    return {
+      recommendations: recommendedVideoDocs
+        .filter(doc => doc.exists)
+        .map((doc, index) => ({
+          id: doc.id,
+          score: queryResponse.matches[index].score,
+          ...doc.data(),
+        })),
+    };
+
+  } catch (error) {
+    console.error('[ERROR] Error getting chain recommendations:', error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Failed to get chain recommendations'
+    );
+  }
 }); 

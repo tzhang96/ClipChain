@@ -6,62 +6,35 @@ import '../types/firestore_types.dart';
 
 class VideoThumbnail extends StatelessWidget {
   final VideoDocument video;
+  final double? width;
 
   const VideoThumbnail({
     super.key,
     required this.video,
+    this.width,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Thumbnail Image
-        if (video.thumbnailUrl != null)
-          Image.network(
+    return Container(
+      width: width,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: video.thumbnailUrl != null
+        ? Image.network(
             video.thumbnailUrl!,
             fit: BoxFit.cover,
+            width: width,
+            height: double.infinity,
           )
-        else
-          Container(
-            color: Colors.black,
+        : Container(
+            color: Colors.black.withOpacity(0.1),
             child: const Center(
-              child: Icon(Icons.video_library, color: Colors.white),
+              child: Icon(Icons.video_library, size: 48),
             ),
           ),
-
-        // Like Count Overlay
-        Positioned(
-          bottom: 4,
-          left: 4,
-          child: Consumer2<AuthProvider, LikesProvider>(
-            builder: (context, authProvider, likesProvider, _) {
-              final userId = authProvider.user?.uid;
-              final isLiked = userId != null && 
-                  likesProvider.isVideoLiked(userId, video.id);
-
-              return Row(
-                children: [
-                  Icon(
-                    Icons.favorite,
-                    color: isLiked ? Colors.red : Colors.white,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${video.likes}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 } 
