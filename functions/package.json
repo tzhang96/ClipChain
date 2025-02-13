@@ -23,6 +23,8 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@pinecone-database/pinecone": "^4.1.0",
+    "@types/cors": "^2.8.17",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "firebase-admin": "^11.11.1",
     "firebase-functions": "^4.5.0",

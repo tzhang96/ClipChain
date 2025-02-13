@@ -11,17 +11,28 @@ import * as path from 'path';
 import OpenAI from 'openai';
 import { Pinecone, RecordMetadata } from '@pinecone-database/pinecone';
 import { CallableRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
 import * as dotenv from 'dotenv';
+import * as cors from 'cors';
 
 // Load environment variables
 dotenv.config();
 
-// Define secrets
-const geminiApiKey = defineSecret('GEMINI_API_KEY');
-const openaiApiKey = defineSecret('OPENAI_API_KEY');
-const pineconeApiKey = defineSecret('PINECONE_API_KEY');
-const pineconeIndex = defineSecret('PINECONE_INDEX');
+// Check required environment variables
+const requiredEnvVars = [
+  'GEMINI_API_KEY',
+  'OPENAI_API_KEY',
+  'PINECONE_API_KEY',
+  'PINECONE_INDEX',
+  'REPLICATE_API_TOKEN'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`Missing required environment variable: ${envVar}`);
+  } else {
+    console.log(`Found environment variable: ${envVar}`);
+  }
+}
 
 interface PineconeMetadata extends RecordMetadata {
   videoId: string;
@@ -98,14 +109,20 @@ async function analyzeWithGemini(apiKey: string, videoUrl: string, thumbnailUrl:
   // Initialize services inside the function
   const genAI = new GoogleGenerativeAI(apiKey);
   const fileManager = new GoogleAIFileManager(apiKey);
+  let tempVideoPath: string | null = null;
 
   try {
+    console.log('Downloading video from URL:', videoUrl);
     // Download video to temp file
     const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw new Error(`Failed to download video: ${videoResponse.status} ${videoResponse.statusText}`);
+    }
+    
     const videoBuffer = await videoResponse.buffer();
-    const tempVideoPath = path.join(os.tmpdir(), 'temp_video.mp4');
+    tempVideoPath = path.join(os.tmpdir(), `temp_video_${Date.now()}.mp4`);
     fs.writeFileSync(tempVideoPath, videoBuffer);
-    console.log('Video downloaded successfully');
+    console.log('Video downloaded successfully to:', tempVideoPath);
 
     // Upload to Gemini File API
     const uploadResult = await fileManager.uploadFile(tempVideoPath, {
@@ -163,9 +180,6 @@ Important:
 
     console.log('Analysis completed successfully');
 
-    // Clean up temp file
-    fs.unlinkSync(tempVideoPath);
-
     // Parse the response as JSON
     const rawResponse = result.response.text();
     console.log('Raw response:', rawResponse);
@@ -218,6 +232,19 @@ Important:
   } catch (error) {
     console.error('Error in analyzeWithGemini:', error);
     throw error;
+  } finally {
+    // Clean up temp file if it exists
+    if (tempVideoPath) {
+      try {
+        if (fs.existsSync(tempVideoPath)) {
+          fs.unlinkSync(tempVideoPath);
+          console.log('Cleaned up temporary video file:', tempVideoPath);
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up temp file:', cleanupError);
+        // Don't throw the cleanup error as the main operation might have succeeded
+      }
+    }
   }
 }
 
@@ -315,13 +342,7 @@ async function storeEmbeddings(
 // Core analysis function shared between triggers
 async function performVideoAnalysis(
   videoRef: admin.firestore.DocumentReference,
-  video: VideoData,
-  secrets: {
-    geminiApiKey: string;
-    openaiApiKey: string;
-    pineconeApiKey: string;
-    pineconeIndex: string;
-  }
+  video: VideoData
 ) {
   // Initialize Firebase Admin if not already initialized
   if (admin.apps.length === 0) {
@@ -355,17 +376,25 @@ async function performVideoAnalysis(
     console.log(`[DEBUG] Starting Gemini API call`);
     console.log(`[DEBUG] Using model: gemini-2.0-flash`);
     
-    // Call Gemini API with the API key
-    const analysis = await analyzeWithGemini(secrets.geminiApiKey, video.videoUrl, video.thumbnailUrl, video.description || '');
+    // Call Gemini API with the API key from environment variables
+    const analysis = await analyzeWithGemini(
+      process.env.GEMINI_API_KEY!,
+      video.videoUrl,
+      video.thumbnailUrl,
+      video.description || ''
+    );
     console.log(`[DEBUG] Gemini API response:`, JSON.stringify(analysis));
 
-    // Generate embeddings with the OpenAI key
-    const embeddings = await generateEmbeddings(secrets.openaiApiKey, analysis);
+    // Generate embeddings with OpenAI key from environment variables
+    const embeddings = await generateEmbeddings(
+      process.env.OPENAI_API_KEY!,
+      analysis
+    );
     
-    // Store embeddings with the Pinecone credentials
+    // Store embeddings with Pinecone credentials from environment variables
     await storeEmbeddings(
-      secrets.pineconeApiKey,
-      secrets.pineconeIndex,
+      process.env.PINECONE_API_KEY!,
+      process.env.PINECONE_INDEX!,
       videoId,
       embeddings,
       {
@@ -411,7 +440,8 @@ async function performVideoAnalysis(
 export const analyzeVideo = functions.firestore
   .onDocumentCreated({
     document: 'videos/{videoId}',
-    secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+    timeoutSeconds: 540, // 9 minutes timeout
+    memory: '1GiB', // More memory for video processing
   }, async (event) => {
     const snapshot = event.data;
     if (!snapshot) {
@@ -420,17 +450,13 @@ export const analyzeVideo = functions.firestore
     }
 
     const video = snapshot.data() as VideoData;
-    await performVideoAnalysis(snapshot.ref, video, {
-      geminiApiKey: geminiApiKey.value(),
-      openaiApiKey: openaiApiKey.value(),
-      pineconeApiKey: pineconeApiKey.value(),
-      pineconeIndex: pineconeIndex.value(),
-    });
+    await performVideoAnalysis(snapshot.ref, video);
   });
 
 // Function to manually trigger analysis for a specific video
 export const reanalyzeVideo = functions.https.onCall({
-  secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+  timeoutSeconds: 540, // 9 minutes timeout
+  memory: '1GiB', // More memory for video processing
 }, async (request: functions.https.CallableRequest) => {
   console.log('[DEBUG] reanalyzeVideo called with request:', JSON.stringify({
     auth: request.auth,
@@ -476,12 +502,7 @@ export const reanalyzeVideo = functions.https.onCall({
     }
 
     console.log('[DEBUG] Authorization successful, proceeding with analysis');
-    await performVideoAnalysis(videoRef, video, {
-      geminiApiKey: geminiApiKey.value(),
-      openaiApiKey: openaiApiKey.value(),
-      pineconeApiKey: pineconeApiKey.value(),
-      pineconeIndex: pineconeIndex.value(),
-    });
+    await performVideoAnalysis(videoRef, video);
     return { success: true };
   } catch (error) {
     console.error('[ERROR] Error in reanalyzeVideo:', error);
@@ -492,102 +513,120 @@ export const reanalyzeVideo = functions.https.onCall({
   }
 });
 
+// Initialize cors middleware
+const corsHandler = cors({ origin: true });
+
 // Function to batch analyze videos
 export const batchAnalyzeVideos = functions.https.onRequest({
-  secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+  timeoutSeconds: 540, // 9 minutes timeout
+  memory: '1GiB', // More memory for video processing
 }, async (req, res) => {
-  try {
-    const batchSize = 50;
-    
-    // Get videos that need analysis
-    const snapshot = await admin.firestore()
-      .collection('videos')
-      .where('analysis', 'in', [null, undefined]) // Missing analysis
-      .orderBy('createdAt', 'desc')
-      .limit(batchSize)
-      .get();
-
-    // Get videos with failed analysis
-    const failedSnapshot = await admin.firestore()
-      .collection('videos')
-      .where('analysis.status', '==', 'failed')
-      .orderBy('createdAt', 'desc')
-      .limit(batchSize)
-      .get();
-
-    // Get videos with potentially malformed analysis
-    const malformedSnapshot = await admin.firestore()
-      .collection('videos')
-      .where('analysis.status', '==', 'completed')
-      .where('analysis.hasEmbeddings', '==', false)
-      .orderBy('createdAt', 'desc')
-      .limit(batchSize)
-      .get();
-
-    // Combine all videos that need processing
-    const videosToAnalyze = [
-      ...snapshot.docs,
-      ...failedSnapshot.docs,
-      ...malformedSnapshot.docs
-    ].slice(0, batchSize); // Ensure we don't exceed batch size
-
-    console.log(`Found videos requiring analysis:
-      - ${snapshot.size} missing analysis
-      - ${failedSnapshot.size} failed analysis
-      - ${malformedSnapshot.size} malformed/incomplete analysis
-      Total to process: ${videosToAnalyze.length}`);
-
-    const secrets = {
-      geminiApiKey: geminiApiKey.value(),
-      openaiApiKey: openaiApiKey.value(),
-      pineconeApiKey: pineconeApiKey.value(),
-      pineconeIndex: pineconeIndex.value(),
-    };
-
-    const tasks = videosToAnalyze.map(async (doc) => {
-      const video = doc.data() as VideoData;
+  // Handle CORS
+  return new Promise((resolve, reject) => {
+    corsHandler(req, res, async () => {
       try {
-        await performVideoAnalysis(doc.ref, video, secrets);
-        return { 
-          id: doc.id, 
-          success: true,
-          previousStatus: video.analysis?.status || 'missing' 
+        // Ensure Firebase is initialized
+        if (admin.apps.length === 0) {
+          admin.initializeApp();
+        }
+
+        const batchSize = 50;
+        
+        // Get videos that need analysis - using exists check
+        const snapshot = await admin.firestore()
+          .collection('videos')
+          .orderBy('createdAt', 'desc')
+          .limit(batchSize)
+          .get()
+          .then(querySnapshot => {
+            // Filter locally for documents without analysis field
+            return querySnapshot.docs.filter(doc => !doc.get('analysis'));
+          });
+
+        // Get videos with failed analysis
+        const failedSnapshot = await admin.firestore()
+          .collection('videos')
+          .where('analysis.status', '==', 'failed')
+          .orderBy('createdAt', 'desc')
+          .limit(batchSize)
+          .get();
+
+        // Get videos with potentially malformed analysis
+        const malformedSnapshot = await admin.firestore()
+          .collection('videos')
+          .where('analysis.status', '==', 'completed')
+          .where('analysis.hasEmbeddings', '==', false)
+          .orderBy('createdAt', 'desc')
+          .limit(batchSize)
+          .get();
+
+        // Combine all videos that need processing
+        const videosToAnalyze = [
+          ...snapshot,
+          ...failedSnapshot.docs,
+          ...malformedSnapshot.docs
+        ].slice(0, batchSize); // Ensure we don't exceed batch size
+
+        console.log(`Found videos requiring analysis:
+          - ${snapshot.length} missing analysis
+          - ${failedSnapshot.size} failed analysis
+          - ${malformedSnapshot.size} malformed/incomplete analysis
+          Total to process: ${videosToAnalyze.length}`);
+
+        const tasks = videosToAnalyze.map(async (doc) => {
+          const video = doc.data() as VideoData;
+          try {
+            await performVideoAnalysis(doc.ref, video);
+            return { 
+              id: doc.id, 
+              success: true,
+              previousStatus: video.analysis?.status || 'missing' 
+            };
+          } catch (error) {
+            return { 
+              id: doc.id, 
+              success: false, 
+              previousStatus: video.analysis?.status || 'missing',
+              error: error instanceof Error ? error.message : 'Unknown error' 
+            };
+          }
+        });
+
+        const results = await Promise.all(tasks);
+        
+        const response = {
+          summary: {
+            total_checked: snapshot.length + failedSnapshot.size + malformedSnapshot.size,
+            missing_analysis: snapshot.length,
+            failed_analysis: failedSnapshot.size,
+            malformed_analysis: malformedSnapshot.size,
+            processed: videosToAnalyze.length
+          },
+          results
         };
+
+        res.status(200).json(response);
+        resolve();
+
       } catch (error) {
-        return { 
-          id: doc.id, 
-          success: false, 
-          previousStatus: video.analysis?.status || 'missing',
-          error: error instanceof Error ? error.message : 'Unknown error' 
-        };
+        console.error('Error in batchAnalyzeVideos:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        res.status(500).json({
+          error: errorMessage,
+          timestamp: new Date().toISOString()
+        });
+        resolve();
       }
     });
-
-    const results = await Promise.all(tasks);
-    res.json({
-      summary: {
-        total_checked: snapshot.size + failedSnapshot.size + malformedSnapshot.size,
-        missing_analysis: snapshot.size,
-        failed_analysis: failedSnapshot.size,
-        malformed_analysis: malformedSnapshot.size,
-        processed: videosToAnalyze.length
-      },
-      results
-    });
-
-  } catch (error) {
-    console.error('Error in batchAnalyzeVideos:', error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
+  });
 });
 
 // Add a new function for finding similar videos
 export const findSimilarVideos = functions.https.onCall({
-  secrets: [geminiApiKey, openaiApiKey, pineconeApiKey, pineconeIndex]
+  timeoutSeconds: 540, // 9 minutes timeout
+  memory: '1GiB', // More memory for video processing
 }, async (request: CallableRequest) => {
-  const { videoId, type = 'content', limit = 10 } = request.data as {
+  const { videoId, type = 'content', limit = 3 } = request.data as {
     videoId: string;
     type?: 'content' | 'visual' | 'mood';
     limit?: number;
@@ -599,10 +638,10 @@ export const findSimilarVideos = functions.https.onCall({
 
   try {
     const pineconeClient = new Pinecone({
-      apiKey: pineconeApiKey.value(),
+      apiKey: process.env.PINECONE_API_KEY!,
     });
 
-    const index = pineconeClient.index(pineconeIndex.value());
+    const index = pineconeClient.index(process.env.PINECONE_INDEX!);
 
     // First, get the vector for the target video
     const targetVector = await index.fetch([`${videoId}_${type}`]);
