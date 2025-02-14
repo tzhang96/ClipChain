@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/chain_provider.dart';
 import '../types/firestore_types.dart';
+import '../screens/create_chain_screen.dart';
 
 class AddToChainSheet extends StatefulWidget {
   final String videoId;
@@ -70,7 +71,7 @@ class _AddToChainSheetState extends State<AddToChainSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Header
-          Container(
+          Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
@@ -89,6 +90,38 @@ class _AddToChainSheetState extends State<AddToChainSheet> {
               ],
             ),
           ),
+
+          // Create New Chain Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Colors.blue,
+                child: Icon(Icons.add, color: Colors.white),
+              ),
+              title: const Text('Create New Chain'),
+              onTap: () async {
+                // Close the sheet
+                Navigator.of(context).pop();
+                
+                // Navigate to create chain screen
+                final result = await Navigator.of(context).push<String>(
+                  MaterialPageRoute(
+                    builder: (context) => CreateChainScreen(
+                      initialVideoId: widget.videoId,
+                    ),
+                  ),
+                );
+
+                // If chain was created successfully, return success
+                if (result != null) {
+                  Navigator.of(context).pop(true);
+                }
+              },
+            ),
+          ),
+
+          const Divider(),
 
           // Error message if any
           if (_error != null)

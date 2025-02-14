@@ -318,11 +318,11 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                       ),
                                       const SizedBox(width: 16),
                                     // Add to Chain Button
-                                    if (userId != null && userId != video.userId)
+                                    if (userId != null)
                                       IconButton(
                                         icon: const Icon(Icons.playlist_add, color: Colors.white),
-                                        onPressed: () {
-                                          showModalBottomSheet(
+                                        onPressed: () async {
+                                          final result = await showModalBottomSheet<bool>(
                                               context: context,
                                               isScrollControlled: true,
                                             builder: (context) => Padding(
@@ -335,20 +335,13 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                                 ),
                                               ),
                                             );
-                                        },
-                                      ),
-                                    // Create Chain Button
-                                    if (userId != null && userId == video.userId)
-                                      IconButton(
-                                        icon: const Icon(Icons.playlist_add, color: Colors.white),
-                                        onPressed: () {
-                                          Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (context) => CreateChainScreen(
-                                                initialVideoId: video.id,
-                                              ),
-                                            ),
-                                          );
+                                            
+                                          // If video was added to a chain, pop back to chain view
+                                          if (result == true) {
+                                            if (mounted) {
+                                              Navigator.of(context).pop(true);
+                                            }
+                                          }
                                         },
                                       ),
                                     if (userId != null && userId == video.userId)

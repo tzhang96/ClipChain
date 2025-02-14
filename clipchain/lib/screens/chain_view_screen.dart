@@ -47,9 +47,11 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
     });
 
     try {
+      final chainProvider = context.read<ChainProvider>();
+      final liveChain = chainProvider.getChainById(widget.chain.id) ?? widget.chain;
+      
       print('ChainViewScreen: Calling getRecommendations');
-      final recommendations = await context.read<ChainProvider>()
-        .getRecommendations(widget.chain);
+      final recommendations = await chainProvider.getRecommendations(liveChain);
       
       print('ChainViewScreen: Received ${recommendations.length} recommendations');
       
@@ -82,15 +84,18 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
     final videoProvider = context.watch<VideoProvider>();
     final userProvider = context.watch<UserProvider>();
     final chainProvider = context.watch<ChainProvider>();
-    final user = userProvider.getUser(widget.chain.userId);
+    
+    // Get the live chain data
+    final liveChain = chainProvider.getChainById(widget.chain.id) ?? widget.chain;
+    final user = userProvider.getUser(liveChain.userId);
     
     // Fetch user data if not available
-    if (user == null && !userProvider.isLoading(widget.chain.userId)) {
-      userProvider.fetchUser(widget.chain.userId);
+    if (user == null && !userProvider.isLoading(liveChain.userId)) {
+      userProvider.fetchUser(liveChain.userId);
     }
 
-    // Get all videos in the chain
-    final videos = widget.chain.videoIds
+    // Get all videos in the chain using the live chain data
+    final videos = liveChain.videoIds
         .map((id) => videoProvider.getVideoById(id))
         .where((video) => video != null)
         .map((video) => video!)
@@ -102,7 +107,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
       slivers: [
         // App Bar with chain info
         SliverAppBar(
-          expandedHeight: 200,
+          expandedHeight: liveChain.description != null ? 220 : 180,
           pinned: true,
           backgroundColor: Colors.transparent,
           automaticallyImplyLeading: false,
@@ -121,27 +126,30 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
               ),
               child: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 40),
                       Text(
-                        widget.chain.title,
+                        liveChain.title,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      if (widget.chain.description != null) ...[
+                      if (liveChain.description != null) ...[
                         const SizedBox(height: 8),
                         Text(
-                          widget.chain.description!,
+                          liveChain.description!,
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 16,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                       const SizedBox(height: 16),
@@ -151,7 +159,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (context) => ProfileScreen(
-                                userId: widget.chain.userId,
+                                userId: liveChain.userId,
                                 showNavBar: true,
                               ),
                             ),
@@ -184,15 +192,14 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                               builder: (context, authProvider, chainProvider, _) {
                                 final userId = authProvider.user?.uid;
                                 final isLiked = userId != null && 
-                                    chainProvider.isItemLiked(userId, widget.chain.id);
-                                final liveChain = chainProvider.getChainById(widget.chain.id) ?? widget.chain;
+                                    chainProvider.isItemLiked(userId, liveChain.id);
 
                                 return Row(
                                   children: [
                                     GestureDetector(
                                       onTap: () {
                                         if (userId != null) {
-                                          chainProvider.toggleLike(userId, widget.chain.id);
+                                          chainProvider.toggleLike(userId, liveChain.id);
                                         }
                                       },
                                       child: Icon(
@@ -209,6 +216,103 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                                         fontSize: 14,
                                       ),
                                     ),
+                                    // Add delete button for chain owner
+                                    if (userId != null && userId == liveChain.userId)
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                                        color: Colors.white,
+                                        onSelected: (value) async {
+                                          if (value == 'delete') {
+                                            // Show confirmation dialog
+                                            final shouldDelete = await showDialog<bool>(
+                                              context: context,
+                                              builder: (context) => AlertDialog(
+                                                title: const Text('Delete Chain'),
+                                                content: const Text(
+                                                  'Are you sure you want to delete this chain?\n\n'
+                                                  'This will:\n'
+                                                  '• Delete the chain permanently\n'
+                                                  '• Remove all likes on this chain\n\n'
+                                                  'This action cannot be undone.'
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () => Navigator.of(context).pop(false),
+                                                    child: const Text('Cancel'),
+                                                  ),
+                                                  TextButton(
+                                                    style: TextButton.styleFrom(
+                                                      foregroundColor: Colors.red,
+                                                    ),
+                                                    onPressed: () => Navigator.of(context).pop(true),
+                                                    child: const Text('Delete'),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+
+                                            if (shouldDelete == true) {
+                                              try {
+                                                // Show loading indicator
+                                                showDialog(
+                                                  context: context,
+                                                  barrierDismissible: false,
+                                                  builder: (context) => const Center(
+                                                    child: CircularProgressIndicator(),
+                                                  ),
+                                                );
+
+                                                // Delete the chain
+                                                await chainProvider.deleteChain(liveChain.id, userId);
+
+                                                // Dismiss loading indicator
+                                                Navigator.of(context).pop();
+
+                                                // Show success message and return to profile
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text('Chain deleted successfully'),
+                                                    ),
+                                                  );
+                                                  Navigator.of(context).pushNamedAndRemoveUntil(
+                                                    '/profile',
+                                                    (route) => false,
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                // Dismiss loading indicator
+                                                Navigator.of(context).pop();
+
+                                                // Show error message
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Error deleting chain: $e'),
+                                                      backgroundColor: Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        itemBuilder: (BuildContext context) => [
+                                          const PopupMenuItem<String>(
+                                            value: 'delete',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.delete, color: Colors.red),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  'Delete',
+                                                  style: TextStyle(color: Colors.red),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                   ],
                                 );
                               },
@@ -294,9 +398,9 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                   final video = _recommendations![index];
                   print('ChainViewScreen: Building recommendation tile for video ${video.id}');
                   return GestureDetector(
-                    onTap: () {
+                    onTap: () async {
                       // Play recommendations as a feed
-                      Navigator.of(context).push(
+                      final result = await Navigator.of(context).push<bool>(
                         MaterialPageRoute(
                           builder: (context) => VideoFeedScreen(
                             customVideos: _recommendations!,
@@ -309,7 +413,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    'Recommended for "${widget.chain.title}"',
+                                    'Recommended for "${liveChain.title}"',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
@@ -328,6 +432,11 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                           ),
                         ),
                       );
+
+                      // If video was added to chain, refresh recommendations
+                      if (result == true && mounted) {
+                        _loadRecommendations();
+                      }
                     },
                     child: Stack(
                       children: [

@@ -21,15 +21,13 @@ class AuthenticatedView extends StatelessWidget {
       body: body,
       selectedIndex: selectedIndex,
       onFeedTap: (_) {
-        // If not already in feed, navigate to it
-        if (selectedIndex != 0) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (context) => const VideoFeedScreen(),
-            ),
-            (route) => false,
-          );
-        }
+        // Always navigate to feed when tapped, replacing current route
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => const VideoFeedScreen(),
+          ),
+          (route) => false,
+        );
       },
       onVideoUploaded: (videoId) {
         if (videoId != null) {
