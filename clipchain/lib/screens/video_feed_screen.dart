@@ -337,10 +337,8 @@ class VideoFeedScreenState extends State<VideoFeedScreen> {
                                             );
                                             
                                           // If video was added to a chain, pop back to chain view
-                                          if (result == true) {
-                                            if (mounted) {
-                                              Navigator.of(context).pop(true);
-                                            }
+                                          if (result == true && mounted && widget.onHeaderTap != null) {
+                                            widget.onHeaderTap!();
                                           }
                                         },
                                       ),

@@ -6,6 +6,7 @@ import '../providers/chain_provider.dart';
 import '../providers/likes_provider.dart';
 import '../types/firestore_types.dart';
 import '../widgets/video_grid.dart';
+import '../screens/chain_view_screen.dart';
 
 class CreateChainScreen extends StatefulWidget {
   final String? initialVideoId;
@@ -71,7 +72,16 @@ class _CreateChainScreenState extends State<CreateChainScreen> with SingleTicker
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Chain created successfully!')),
         );
-        Navigator.pop(context, chain.id);
+        if (widget.initialVideoId != null) {
+          Navigator.of(context).pop(chain.id);
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (context) => ChainViewScreen(chain: chain),
+            ),
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

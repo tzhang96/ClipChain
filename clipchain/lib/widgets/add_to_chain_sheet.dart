@@ -61,6 +61,45 @@ class _AddToChainSheetState extends State<AddToChainSheet> {
     }
   }
 
+  Future<void> _removeFromChain(ChainDocument chain) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final chainProvider = context.read<ChainProvider>();
+      final updatedChain = ChainDocument(
+        id: chain.id,
+        userId: chain.userId,
+        title: chain.title,
+        description: chain.description,
+        likes: chain.likes,
+        videoIds: chain.videoIds.where((id) => id != widget.videoId).toList(),
+        createdAt: chain.createdAt,
+        updatedAt: chain.updatedAt,
+      );
+
+      final success = await chainProvider.updateChain(updatedChain);
+      
+      if (mounted) {
+        if (success) {
+          Navigator.of(context).pop(true); // Return success
+        } else {
+          setState(() => _error = 'Failed to remove video from chain');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -110,12 +149,29 @@ class _AddToChainSheetState extends State<AddToChainSheet> {
                     builder: (context) => CreateChainScreen(
                       initialVideoId: widget.videoId,
                     ),
+                    settings: const RouteSettings(name: '/create_chain'),
                   ),
                 );
 
                 // If chain was created successfully, return success
-                if (result != null) {
+                if (result != null && mounted) {
+                  // Return success to trigger a refresh of the chain view
                   Navigator.of(context).pop(true);
+                } else if (mounted) {
+                  // If no result, reopen the sheet
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (context) => Padding(
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).viewInsets.bottom,
+                      ),
+                      child: AddToChainSheet(
+                        videoId: widget.videoId,
+                        userId: widget.userId,
+                      ),
+                    ),
+                  );
                 }
               },
             ),
@@ -178,12 +234,16 @@ class _AddToChainSheetState extends State<AddToChainSheet> {
                       title: Text(chain.title),
                       subtitle: Text('${chain.videoIds.length} videos'),
                       trailing: alreadyContains
-                        ? const Icon(Icons.check_circle, color: Colors.green)
-                        : null,
-                      enabled: !alreadyContains && !_isLoading,
-                      onTap: alreadyContains || _isLoading
-                        ? null
-                        : () => _addToChain(chain),
+                        ? IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            color: Colors.red,
+                            onPressed: _isLoading ? null : () => _removeFromChain(chain),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            color: Colors.blue,
+                            onPressed: _isLoading ? null : () => _addToChain(chain),
+                          ),
                     );
                   },
                 );
