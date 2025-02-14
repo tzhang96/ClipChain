@@ -114,71 +114,102 @@ class _AIVideoScreenState extends State<AIVideoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Generate AI Video'),
-      ),
-      body: FutureBuilder<ReplicateService>(
-        future: _replicateServiceFuture,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Error initializing AI service: ${snapshot.error}',
-                  textAlign: TextAlign.center,
+    return WillPopScope(
+      onWillPop: () async {
+        if (_isGenerating) {
+          final shouldPop = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Cancel Generation?'),
+              content: const Text('Navigating away will cancel the video generation. Are you sure you want to leave?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Stay'),
                 ),
-              ),
-            );
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextFormField(
-                    controller: _promptController,
-                    decoration: const InputDecoration(
-                      labelText: 'Video Description',
-                      helperText: 'Describe what you want in the video',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                    validator: (value) =>
-                        value?.isEmpty ?? true ? 'Please enter a description' : null,
-                    enabled: !_isGenerating,
-                  ),
-                  const SizedBox(height: 24),
-                  if (_isGenerating) ...[
-                    LinearProgressIndicator(value: _uploadProgress),
-                    const SizedBox(height: 8),
-                    Text(
-                      _uploadProgress > 0
-                          ? 'Uploading: ${(_uploadProgress * 100).toStringAsFixed(1)}%'
-                          : 'Generating video...',
-                      textAlign: TextAlign.center,
-                    ),
-                  ] else
-                    ElevatedButton.icon(
-                      onPressed: _generateAndUploadVideo,
-                      icon: const Icon(Icons.movie_creation),
-                      label: const Text('Generate Video'),
-                    ),
-                ],
-              ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Leave'),
+                ),
+              ],
             ),
           );
-        },
+          return shouldPop ?? false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Generate AI Video'),
+        ),
+        body: FutureBuilder<ReplicateService>(
+          future: _replicateServiceFuture,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Error initializing AI service: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+
+            if (!snapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(),
+              );
+            }
+
+            return Column(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextFormField(
+                            controller: _promptController,
+                            decoration: const InputDecoration(
+                              labelText: 'Video Description',
+                              helperText: 'Describe what you want in the video',
+                              border: OutlineInputBorder(),
+                            ),
+                            maxLines: 3,
+                            validator: (value) =>
+                                value?.isEmpty ?? true ? 'Please enter a description' : null,
+                            enabled: !_isGenerating,
+                          ),
+                          const SizedBox(height: 24),
+                          if (_isGenerating) ...[
+                            LinearProgressIndicator(value: _uploadProgress),
+                            const SizedBox(height: 8),
+                            Text(
+                              _uploadProgress > 0
+                                  ? 'Uploading: ${(_uploadProgress * 100).toStringAsFixed(1)}%'
+                                  : 'Generating video, please don\'t navigate away...',
+                              textAlign: TextAlign.center,
+                            ),
+                          ] else
+                            ElevatedButton.icon(
+                              onPressed: _generateAndUploadVideo,
+                              icon: const Icon(Icons.movie_creation),
+                              label: const Text('Generate Video'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
