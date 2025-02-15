@@ -410,13 +410,19 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
   Future<List<VideoDocument>> getRecommendations(ChainDocument chain) async {
     try {
       print('ChainProvider: Getting recommendations for chain ${chain.id}');
-      print('ChainProvider: Chain details - title: ${chain.title}, videoCount: ${chain.videoIds.length}');
+      print('ChainProvider: Chain details:');
+      print('ChainProvider: - Title: ${chain.title}');
+      print('ChainProvider: - Video count: ${chain.videoIds.length}');
+      print('ChainProvider: - Description: ${chain.description}');
       
       // Add chain to cache if not already there
       addToMainCache(chain);
       
       final functions = FirebaseFunctions.instance;
+      print('ChainProvider: Initialized Firebase Functions instance');
+      
       final callable = functions.httpsCallable('getChainRecommendations');
+      print('ChainProvider: Created callable for getChainRecommendations');
       
       final params = {
         'chainId': chain.id,
@@ -427,27 +433,37 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
       print('ChainProvider: Calling Cloud Function with params: $params');
       
       final result = await callable.call(params);
-      
-      print('ChainProvider: Received raw response: ${result.data}');
+      print('ChainProvider: Cloud Function call completed');
+      print('ChainProvider: Raw response type: ${result.data.runtimeType}');
+      print('ChainProvider: Raw response: ${result.data}');
       
       if (result.data == null) {
         print('ChainProvider: Received null response from Cloud Function');
         return [];
       }
 
-      if (result.data['recommendations'] == null) {
+      // Safely cast the data to Map<String, dynamic>
+      final Map<Object?, Object?> rawData = result.data as Map<Object?, Object?>;
+      if (!rawData.containsKey('recommendations')) {
         print('ChainProvider: No recommendations in response');
         return [];
       }
+
+      final List<Object?> rawRecommendations = rawData['recommendations'] as List<Object?>;
       
-      final recommendations = (result.data['recommendations'] as List).map((item) {
+      final recommendations = rawRecommendations.map((item) {
         print('ChainProvider: Processing recommendation item: $item');
         
-        final videoData = item as Map<String, dynamic>;
+        final Map<Object?, Object?> rawVideoData = item as Map<Object?, Object?>;
+        // Convert the raw map to a properly typed map
+        final videoData = Map<String, dynamic>.fromEntries(
+          rawVideoData.entries.map((e) => MapEntry(e.key.toString(), e.value))
+        );
         print('ChainProvider: Video data: $videoData');
         
         // Convert Timestamp data
-        final createdAtData = videoData['createdAt'] as Map<String, dynamic>;
+        final Map<String, dynamic> createdAtData = (videoData['createdAt'] as Map<Object?, Object?>)
+            .map((key, value) => MapEntry(key.toString(), value));
         final createdAt = Timestamp(
           createdAtData['_seconds'] as int,
           createdAtData['_nanoseconds'] as int,
@@ -456,8 +472,10 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
         // Create VideoAnalysis object if analysis exists
         VideoAnalysis? analysis;
         if (videoData['analysis'] != null) {
-          final analysisData = videoData['analysis'] as Map<String, dynamic>;
-          final analyzedAtData = analysisData['analyzedAt'] as Map<String, dynamic>;
+          final Map<String, dynamic> analysisData = (videoData['analysis'] as Map<Object?, Object?>)
+              .map((key, value) => MapEntry(key.toString(), value));
+          final Map<String, dynamic> analyzedAtData = (analysisData['analyzedAt'] as Map<Object?, Object?>)
+              .map((key, value) => MapEntry(key.toString(), value));
           final analyzedAt = Timestamp(
             analyzedAtData['_seconds'] as int,
             analyzedAtData['_nanoseconds'] as int,
@@ -465,28 +483,29 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
 
           analysis = VideoAnalysis(
             summary: analysisData['summary'] as String,
-            themes: List<String>.from(analysisData['themes'] as List),
-            visuals: Map<String, List<String>>.from(
-              (analysisData['visuals'] as Map<String, dynamic>).map(
-                (key, value) => MapEntry(key, List<String>.from(value as List))
-              )
+            themes: List<String>.from((analysisData['themes'] as List<Object?>).map((e) => e.toString())),
+            visuals: Map<String, List<String>>.fromEntries(
+              (analysisData['visuals'] as Map<Object?, Object?>).entries.map((entry) => MapEntry(
+                entry.key.toString(),
+                (entry.value as List<Object?>).map((e) => e.toString()).toList(),
+              ))
             ),
             style: analysisData['style'] as String,
             mood: analysisData['mood'] as String,
             analyzedAt: analyzedAt,
-            error: analysisData['error'] as String?,
+            error: analysisData['error']?.toString(),
             status: analysisData['status'] as String,
             version: analysisData['version'] as int,
-            rawResponse: analysisData['rawResponse'] as String?,
+            rawResponse: analysisData['rawResponse']?.toString(),
           );
         }
 
         return VideoDocument(
-          id: videoData['id'] as String,
-          userId: videoData['userId'] as String,
-          videoUrl: videoData['videoUrl'] as String,
-          thumbnailUrl: videoData['thumbnailUrl'] as String?,
-          description: videoData['description'] as String,
+          id: videoData['id'].toString(),
+          userId: videoData['userId'].toString(),
+          videoUrl: videoData['videoUrl'].toString(),
+          thumbnailUrl: videoData['thumbnailUrl']?.toString(),
+          description: videoData['description'].toString(),
           likes: videoData['likes'] as int,
           createdAt: createdAt,
           analysis: analysis,
@@ -495,14 +514,14 @@ class ChainProvider with ChangeNotifier, LikeableProviderMixin<ChainDocument> {
 
       print('ChainProvider: Successfully processed ${recommendations.length} recommendations');
       for (final video in recommendations) {
-        print('ChainProvider: Recommendation - id: ${video.id}, title: ${video.description}');
+        print('ChainProvider: Recommendation - id: ${video.id}, description: ${video.description}');
       }
 
       return recommendations;
     } catch (e, stackTrace) {
       print('ChainProvider: Error getting recommendations: $e');
       print('ChainProvider: Stack trace:\n$stackTrace');
-      return [];
+      rethrow;
     }
   }
 

@@ -125,95 +125,119 @@ class _CreateChainScreenState extends State<CreateChainScreen> with SingleTicker
       appBar: AppBar(
         title: const Text('Create Chain'),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Title Input
-                TextFormField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                    border: OutlineInputBorder(),
+      body: GestureDetector(
+        onTap: () {
+          // Dismiss keyboard when tapping outside text fields
+          FocusScope.of(context).unfocus();
+        },
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Title Input
+                  TextFormField(
+                    controller: _titleController,
+                    decoration: const InputDecoration(
+                      labelText: 'Title',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a title';
+                      }
+                      return null;
+                    },
+                    enabled: !_isCreating,
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a title';
-                    }
-                    return null;
-                  },
-                  enabled: !_isCreating,
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // Description Input
-                TextFormField(
-                  controller: _descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description (optional)',
-                    border: OutlineInputBorder(),
+                  // Description Input
+                  TextFormField(
+                    controller: _descriptionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Description (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                    enabled: !_isCreating,
                   ),
-                  maxLines: 3,
-                  enabled: !_isCreating,
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // Selected Videos Count
-                Text(
-                  'Selected Videos: ${_selectedVideoIds.length}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
+                  // Selected Videos Count
+                  Text(
+                    'Selected Videos: ${_selectedVideoIds.length}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
 
-                // Video Selection Tabs
-                TabBar(
-                  controller: _tabController,
-                  tabs: const [
-                    Tab(text: 'My Videos'),
-                    Tab(text: 'Liked Videos'),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // Video Selection Grid
-                SizedBox(
-                  height: 400, // Fixed height for the grid
-                  child: TabBarView(
+                  // Video Selection Tabs
+                  TabBar(
                     controller: _tabController,
-                    children: [
-                      // My Videos Tab
-                      VideoGrid(
-                        videos: userVideos,
-                        isLoading: false,
-                        onVideoTap: _isCreating ? null : _toggleVideoSelection,
-                        selectedVideoIds: _selectedVideoIds,
-                      ),
-                      // Liked Videos Tab
-                      VideoGrid(
-                        videos: likedVideos,
-                        isLoading: false,
-                        onVideoTap: _isCreating ? null : _toggleVideoSelection,
-                        selectedVideoIds: _selectedVideoIds,
-                      ),
+                    tabs: const [
+                      Tab(text: 'My Videos'),
+                      Tab(text: 'Liked Videos'),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
-                // Create Button
-                if (_isCreating)
-                  const Center(child: CircularProgressIndicator())
-                else
-                  ElevatedButton.icon(
-                    onPressed: _createChain,
-                    icon: const Icon(Icons.playlist_add),
-                    label: const Text('Create Chain'),
+                  // Video Selection Grid
+                  GestureDetector(
+                    onTap: () {
+                      // Dismiss keyboard when tapping the video grid area
+                      FocusScope.of(context).unfocus();
+                    },
+                    child: SizedBox(
+                      height: 400, // Fixed height for the grid
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          // My Videos Tab
+                          VideoGrid(
+                            videos: userVideos,
+                            isLoading: false,
+                            onVideoTap: (videoId) {
+                              // Dismiss keyboard when selecting videos
+                              FocusScope.of(context).unfocus();
+                              if (!_isCreating) {
+                                _toggleVideoSelection(videoId);
+                              }
+                            },
+                            selectedVideoIds: _selectedVideoIds,
+                          ),
+                          // Liked Videos Tab
+                          VideoGrid(
+                            videos: likedVideos,
+                            isLoading: false,
+                            onVideoTap: (videoId) {
+                              // Dismiss keyboard when selecting videos
+                              FocusScope.of(context).unfocus();
+                              if (!_isCreating) {
+                                _toggleVideoSelection(videoId);
+                              }
+                            },
+                            selectedVideoIds: _selectedVideoIds,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-              ],
+                  const SizedBox(height: 16),
+
+                  // Create Button
+                  if (_isCreating)
+                    const Center(child: CircularProgressIndicator())
+                  else
+                    ElevatedButton.icon(
+                      onPressed: _createChain,
+                      icon: const Icon(Icons.playlist_add),
+                      label: const Text('Create Chain'),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

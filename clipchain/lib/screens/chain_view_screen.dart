@@ -42,6 +42,10 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
     }
     
     print('ChainViewScreen: Starting to load recommendations');
+    print('ChainViewScreen: Chain ID: ${widget.chain.id}');
+    print('ChainViewScreen: Chain title: ${widget.chain.title}');
+    print('ChainViewScreen: Chain video count: ${widget.chain.videoIds.length}');
+    
     setState(() {
       _loadingRecommendations = true;
     });
@@ -50,10 +54,16 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
       final chainProvider = context.read<ChainProvider>();
       final liveChain = chainProvider.getChainById(widget.chain.id) ?? widget.chain;
       
+      print('ChainViewScreen: Live chain details:');
+      print('ChainViewScreen: - ID: ${liveChain.id}');
+      print('ChainViewScreen: - Title: ${liveChain.title}');
+      print('ChainViewScreen: - Video count: ${liveChain.videoIds.length}');
       print('ChainViewScreen: Calling getRecommendations');
+      
       final recommendations = await chainProvider.getRecommendations(liveChain);
       
       print('ChainViewScreen: Received ${recommendations.length} recommendations');
+      print('ChainViewScreen: Mounted status: $mounted');
       
       if (mounted) {
         setState(() {
@@ -61,6 +71,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
           _loadingRecommendations = false;
         });
         print('ChainViewScreen: Updated state with recommendations');
+        print('ChainViewScreen: Final recommendations count: ${_recommendations?.length ?? 0}');
       } else {
         print('ChainViewScreen: Widget no longer mounted, skipping state update');
       }
@@ -107,7 +118,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
       slivers: [
         // App Bar with chain info
         SliverAppBar(
-          expandedHeight: liveChain.description != null ? 220 : 180,
+          expandedHeight: liveChain.description != null ? 200 : 160,
           pinned: true,
           backgroundColor: Colors.transparent,
           automaticallyImplyLeading: false,
@@ -126,12 +137,12 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
               ),
               child: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 32),
                       Text(
                         liveChain.title,
                         style: const TextStyle(
@@ -141,7 +152,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                         ),
                       ),
                       if (liveChain.description != null) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
                         Text(
                           liveChain.description!,
                           style: const TextStyle(
@@ -152,7 +163,7 @@ class _ChainViewScreenState extends State<ChainViewScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       // Creator info row
                       GestureDetector(
                         onTap: () {
