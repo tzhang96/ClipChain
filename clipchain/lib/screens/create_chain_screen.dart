@@ -185,13 +185,13 @@ class _CreateChainScreenState extends State<CreateChainScreen> with SingleTicker
                   const SizedBox(height: 8),
 
                   // Video Selection Grid
-                  GestureDetector(
-                    onTap: () {
-                      // Dismiss keyboard when tapping the video grid area
-                      FocusScope.of(context).unfocus();
-                    },
-                    child: SizedBox(
-                      height: 400, // Fixed height for the grid
+                  SizedBox(
+                    height: 400,
+                    child: GestureDetector(
+                      onTap: () {
+                        // Dismiss keyboard when tapping the video grid area
+                        FocusScope.of(context).unfocus();
+                      },
                       child: TabBarView(
                         controller: _tabController,
                         children: [
